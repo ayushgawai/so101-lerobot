@@ -579,9 +579,9 @@ def record_loop(
 
         timestamp = time.perf_counter() - start_episode_t
 
-    if display_cameras and _cv2 is not None:
-        _cv2.destroyWindow("cameras")
-        _cv2.waitKey(1)
+    # Keep the OpenCV "cameras" window open across episode/reset cycles.
+    # Destroying it here makes the feed disappear from the 2nd iteration on
+    # (common on Windows HighGUI). Callers should destroy it when the session ends.
 
 
 @parser.wrap()
@@ -791,6 +791,15 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 recorded_episodes += 1
     finally:
         log_say("Stop recording", cfg.play_sounds, blocking=True)
+
+        if cfg.display_cameras:
+            try:
+                import cv2
+
+                cv2.destroyWindow("cameras")
+                cv2.waitKey(1)
+            except Exception:
+                pass
 
         if dataset:
             dataset.finalize()

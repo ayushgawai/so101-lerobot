@@ -1,0 +1,472 @@
+{
+  "repo_id": "aakashv100/so101-pick-place-positions",
+  "root": "C:\\Users\\GUA-ADMIN\\Desktop\\Aakash\\so101-lerobot\\hf_data\\so101-pick-place-positions",
+  "base_task": "Pick up the cube and place it in the box",
+  "drop_target": "fixed box (no position id)",
+  "num_episodes_logged": 50,
+  "counts_by_pickup_position": {
+    "1": 5,
+    "2": 5,
+    "3": 5,
+    "4": 5,
+    "5": 5,
+    "6": 5,
+    "7": 5,
+    "8": 5,
+    "9": 5,
+    "10": 5
+  },
+  "episodes": [
+    {
+      "episode_index": 0,
+      "pickup_position": 6,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 6 and place it in the box",
+      "saved_at": "2026-09-18T20:39:04.410584+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 1,
+      "pickup_position": 6,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 6 and place it in the box",
+      "saved_at": "2026-09-18T20:40:07.034344+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 2,
+      "pickup_position": 6,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 6 and place it in the box",
+      "saved_at": "2026-09-18T20:40:42.299698+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 3,
+      "pickup_position": 6,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 6 and place it in the box",
+      "saved_at": "2026-09-18T20:41:26.637435+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 4,
+      "pickup_position": 6,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 6 and place it in the box",
+      "saved_at": "2026-09-18T20:41:56.492983+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 5,
+      "pickup_position": 7,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 7 and place it in the box",
+      "saved_at": "2026-09-18T20:45:18.116448+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 6,
+      "pickup_position": 7,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 7 and place it in the box",
+      "saved_at": "2026-09-18T20:45:52.040806+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 7,
+      "pickup_position": 7,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 7 and place it in the box",
+      "saved_at": "2026-09-18T20:46:22.297620+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 8,
+      "pickup_position": 7,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 7 and place it in the box",
+      "saved_at": "2026-09-18T20:46:54.756358+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 9,
+      "pickup_position": 7,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 7 and place it in the box",
+      "saved_at": "2026-09-18T20:47:22.214528+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 10,
+      "pickup_position": 8,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 8 and place it in the box",
+      "saved_at": "2026-09-18T20:49:28.926012+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 11,
+      "pickup_position": 8,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 8 and place it in the box",
+      "saved_at": "2026-09-18T20:50:06.329893+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 12,
+      "pickup_position": 8,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 8 and place it in the box",
+      "saved_at": "2026-09-18T20:50:32.481091+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 13,
+      "pickup_position": 8,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 8 and place it in the box",
+      "saved_at": "2026-09-18T20:50:57.477211+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 14,
+      "pickup_position": 8,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 8 and place it in the box",
+      "saved_at": "2026-09-18T20:51:14.078402+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 15,
+      "pickup_position": 9,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 9 and place it in the box",
+      "saved_at": "2026-09-18T20:52:52.273448+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 16,
+      "pickup_position": 9,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 9 and place it in the box",
+      "saved_at": "2026-09-18T20:53:16.119500+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 17,
+      "pickup_position": 9,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 9 and place it in the box",
+      "saved_at": "2026-09-18T20:53:40.675261+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 18,
+      "pickup_position": 9,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 9 and place it in the box",
+      "saved_at": "2026-09-18T20:54:05.075532+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 19,
+      "pickup_position": 9,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 9 and place it in the box",
+      "saved_at": "2026-09-18T20:54:22.524225+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 20,
+      "pickup_position": 10,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 10 and place it in the box",
+      "saved_at": "2026-09-18T20:55:30.831152+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 21,
+      "pickup_position": 10,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 10 and place it in the box",
+      "saved_at": "2026-09-18T20:55:55.465011+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 22,
+      "pickup_position": 10,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 10 and place it in the box",
+      "saved_at": "2026-09-18T20:56:21.990465+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 23,
+      "pickup_position": 10,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 10 and place it in the box",
+      "saved_at": "2026-09-18T20:56:44.554436+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 24,
+      "pickup_position": 10,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 10 and place it in the box",
+      "saved_at": "2026-09-18T20:57:00.654587+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 25,
+      "pickup_position": 1,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 1 and place it in the box",
+      "saved_at": "2026-09-18T22:25:20.843874+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 26,
+      "pickup_position": 1,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 1 and place it in the box",
+      "saved_at": "2026-09-18T22:28:48.071251+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 27,
+      "pickup_position": 1,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 1 and place it in the box",
+      "saved_at": "2026-09-18T22:29:58.892098+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 28,
+      "pickup_position": 1,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 1 and place it in the box",
+      "saved_at": "2026-09-18T22:31:04.554299+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 29,
+      "pickup_position": 1,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 1 and place it in the box",
+      "saved_at": "2026-09-18T22:32:59.967912+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 30,
+      "pickup_position": 2,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 2 and place it in the box",
+      "saved_at": "2026-09-18T22:35:20.534120+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 31,
+      "pickup_position": 2,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 2 and place it in the box",
+      "saved_at": "2026-09-18T22:36:22.624853+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 32,
+      "pickup_position": 2,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 2 and place it in the box",
+      "saved_at": "2026-09-18T22:37:10.586036+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 33,
+      "pickup_position": 2,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 2 and place it in the box",
+      "saved_at": "2026-09-18T22:38:14.312786+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 34,
+      "pickup_position": 2,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 2 and place it in the box",
+      "saved_at": "2026-09-18T22:39:06.130807+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 35,
+      "pickup_position": 3,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 3 and place it in the box",
+      "saved_at": "2026-09-18T22:42:52.234875+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 36,
+      "pickup_position": 3,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 3 and place it in the box",
+      "saved_at": "2026-09-18T22:44:01.440900+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 37,
+      "pickup_position": 3,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 3 and place it in the box",
+      "saved_at": "2026-09-18T22:45:16.464443+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 38,
+      "pickup_position": 3,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 3 and place it in the box",
+      "saved_at": "2026-09-18T22:46:36.014497+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 39,
+      "pickup_position": 3,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 3 and place it in the box",
+      "saved_at": "2026-09-18T22:47:35.836314+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 40,
+      "pickup_position": 4,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 4 and place it in the box",
+      "saved_at": "2026-09-18T22:49:04.941806+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 41,
+      "pickup_position": 4,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 4 and place it in the box",
+      "saved_at": "2026-09-18T22:49:59.592687+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 42,
+      "pickup_position": 4,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 4 and place it in the box",
+      "saved_at": "2026-09-18T22:51:16.234380+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 43,
+      "pickup_position": 4,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 4 and place it in the box",
+      "saved_at": "2026-09-18T22:52:33.237573+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 44,
+      "pickup_position": 4,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 4 and place it in the box",
+      "saved_at": "2026-09-18T22:53:25.225033+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 45,
+      "pickup_position": 5,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 5 and place it in the box",
+      "saved_at": "2026-09-18T22:55:06.364923+00:00",
+      "block_iteration": 1,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 46,
+      "pickup_position": 5,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 5 and place it in the box",
+      "saved_at": "2026-09-18T22:56:15.208394+00:00",
+      "block_iteration": 2,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 47,
+      "pickup_position": 5,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 5 and place it in the box",
+      "saved_at": "2026-09-18T22:57:26.268953+00:00",
+      "block_iteration": 3,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 48,
+      "pickup_position": 5,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 5 and place it in the box",
+      "saved_at": "2026-09-18T22:58:32.842029+00:00",
+      "block_iteration": 4,
+      "block_iterations_planned": 5
+    },
+    {
+      "episode_index": 49,
+      "pickup_position": 5,
+      "drop_target": "fixed_box",
+      "task": "Pick up the cube from sheet position 5 and place it in the box",
+      "saved_at": "2026-09-18T22:59:28.450197+00:00",
+      "block_iteration": 5,
+      "block_iterations_planned": 5
+    }
+  ],
+  "updated_at": "2026-09-18T22:59:28.452226+00:00"
+}

@@ -46,7 +46,8 @@ develop-eggs/
 MANIFEST
 lib/
 lib64/
-
+*.parquet
+*mp4
 # PyInstaller
 *.manifest
 *.spec
