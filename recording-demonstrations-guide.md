@@ -34,16 +34,22 @@ Verify:
 
 ---
 
-## Recommended: `scripts/run_record.ps1`
+## Recommended wrappers
 
-The wrapper pins the rates and camera settings so every session matches eval: loop, dataset and
-cameras all at 30 Hz, the same camera names/indices/640x480/MJPG as `run_eval.ps1`, h264, and
-compressed Rerun images.
+Both pin the settings every session must share with eval: loop, dataset and cameras at 30 Hz, the
+same camera names/indices/640x480/MJPG as `run_eval.ps1`, h264, and compressed Rerun images.
+
+- **`scripts/run_record.ps1`**: cube placed anywhere (no position ids). Per episode: Enter to
+  start (the follower first slides to the leader pose, unrecorded), Right = save, Left = discard &
+  redo, Esc = stop. No time limit, no reset phase, one task string per dataset.
+- **`scripts/record_pickplace.ps1`**: fixed sheet positions 1-50 (position stored in the task text).
 
 ```powershell
-.\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-test -NumEpisodes 2 -NoPush -ClearCache   # sanity
-.\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-v3                                       # full run
+.\scripts\run_record.ps1 -NumEpisodes 50 -TeleopTest     # aakashv100/so101-pick-place-random, appends
+.\scripts\record_pickplace.ps1 -TeleopTest               # position blocks
 ```
+
+Keep the two in separate datasets: their task strings differ, which matters for SmolVLA.
 
 The raw commands below still work but don't set MJPG or compressed display.
 

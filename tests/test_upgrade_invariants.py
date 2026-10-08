@@ -49,7 +49,6 @@ ROBOT_TYPES = ("--robot.type=so101_follower", "--teleop.type=so101_leader")
     "ps1, module, type_args",
     [
         ("run_eval.ps1", "lerobot_rollout", ("--strategy.type=episodic", ROBOT_TYPES[0])),
-        ("run_record.ps1", "lerobot_record", ROBOT_TYPES),
     ],
 )
 def test_wrapper_flags_exist_in_cli(ps1, module, type_args):
@@ -58,6 +57,20 @@ def test_wrapper_flags_exist_in_cli(ps1, module, type_args):
     flags = {f for f in _wrapper_flags(ps1) if not f.startswith("policy.") or f == "policy.path"}
     missing = sorted(f for f in flags if f"--{f}" not in help_text and f not in ("strategy.type", "robot.type"))
     assert not missing, f"{ps1} passes flags that {module} no longer accepts: {missing}"
+
+
+@pytest.mark.parametrize(
+    "ps1, script", [("run_record.ps1", "record_episodes"), ("record_pickplace.ps1", "record_pickplace")]
+)
+def test_wrapper_flags_exist_in_script(ps1, script):
+    out = subprocess.run(
+        [sys.executable, str(SCRIPTS / f"{script}.py"), "--help"],
+        capture_output=True, text=True, encoding="utf-8", timeout=300, cwd=REPO,
+        env={**__import__("os").environ, "PYTHONUTF8": "1"},
+    )
+    assert out.returncode == 0, out.stderr[-2000:]
+    missing = sorted(f for f in _wrapper_flags(ps1) if f"--{f}" not in out.stdout)
+    assert not missing, f"{ps1} passes flags that {script}.py doesn't accept: {missing}"
 
 
 def test_eval_policy_overrides_exist():
@@ -200,6 +213,7 @@ def test_dataset_record_defaults():
 # test_servos or apply_calib: they connect to the arm immediately and ignore --help.
 HELP_SAFE_SCRIPTS = [
     "record_pickplace",
+    "record_episodes",
     "replay_pickplace",
     "measure_placement_error",
     "log_eval_to_wandb",

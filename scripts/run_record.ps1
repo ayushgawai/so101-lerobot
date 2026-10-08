@@ -1,59 +1,57 @@
 <#
 .SYNOPSIS
-  Record SO-101 teleoperation demonstrations (leader COM4 -> follower COM3) with
-  the same camera setup the eval wrapper (run_eval.ps1) uses.
+  Record SO-101 teleop demos one episode at a time, with the cube placed anywhere.
 
 .DESCRIPTION
-  Wraps `lerobot-record` (run via the venv python). Data-collection rules baked in:
-  - One rate everywhere: control loop, dataset and both cameras run at -Fps (30),
-    the cameras' native rate, so every dataset row has a fresh frame.
-  - Cameras identical to eval: same names, indices, 640x480, MJPG. The policy keys on
-    observation.images.<name>, so changing any of these between train and eval breaks it.
-  - h264 encoding (the default libsvtav1 crashes on this Windows build).
-  - Rerun gets JPEG-compressed frames so the viewer doesn't hit its memory limit.
+  Wraps scripts/record_episodes.py (same style as record_pickplace.ps1, but no position ids).
+  Per episode:
+    1. Prompt: place the cube, put the leader at the start pose, press Enter (q = quit).
+    2. The follower slides to the leader pose over 1 s (not recorded), so episodes don't start
+       with a jump.
+    3. Record with no time limit:
+         Right arrow  - save, then prompt for the next episode
+         Left arrow   - discard and redo the same episode
+         Escape       - stop (the in-progress episode is discarded)
+  No reset phase.
 
-  Keyboard: right arrow ends the episode (or the reset) early, left arrow re-records
-  it, Escape stops and saves.
+  Data kept consistent for ACT training and SmolVLA fine-tuning: the same layout as the project's
+  other SO-101 datasets (6-joint state/action, gripper_cam + top_cam 640x480 MJPG, 30 fps, h264),
+  and one task string for every episode. Appending with a different -Task is refused.
 
-.EXAMPLE
-  # 2-episode sanity run, local only
-  .\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-test -NumEpisodes 2 -NoPush -ClearCache
-
-.EXAMPLE
-  # Full 30-episode session
-  .\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-v3
+  The dataset is appended automatically if -Root already holds one.
 
 .EXAMPLE
-  # Continue an interrupted session with 10 more episodes
-  .\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-v3 -NumEpisodes 10 -Resume
+  # 50 episodes, checking arm + cameras first
+  .\scripts\run_record.ps1 -NumEpisodes 50 -TeleopTest
+
+.EXAMPLE
+  # Keep going until you type q (or press Escape)
+  .\scripts\run_record.ps1
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$RepoId,
-    [int]$NumEpisodes    = 30,
-    [string]$Task        = "Pick up the cube and place it in the bowl",
-    [int]$EpisodeTime    = 45,
-    [int]$ResetTime      = 15,
-    [switch]$ClearCache,                                  # delete the dataset's local HF cache before running
-    [switch]$Resume,                                      # continue an interrupted run; -NumEpisodes = episodes to add
-    [switch]$NoPush,                                      # keep the dataset local (no Hub upload)
-
-    # --- robot / leader / cameras ---
-    [string]$Port         = "COM3",
-    [string]$LeaderPort   = "COM4",
+    [string]$RepoId       = "aakashv100/so101-pick-place-random",
+    [string]$Root         = "hf_data/so101-pick-place-random",
+    [string]$Task         = "Pick up the cube and place it in the box",
+    [int]$NumEpisodes     = 0,                            # 0 = until q / Escape
+    [string]$RobotPort    = "COM3",
+    [string]$TeleopPort   = "COM4",
     [string]$RobotId      = "my_so_arm",
-    [string]$CalibDir     = "./calibration/robots/so_follower",
-    [string]$LeaderCalibDir = "./calibration/teleoperators/so_leader",
+    [string]$TeleopId     = "my_so_arm",
+    [string]$RobotCalib   = "./calibration/robots/so_follower",
+    [string]$TeleopCalib  = "./calibration/teleoperators/so_leader",
     [int]$GripperCamIndex = 0,
     [int]$TopCamIndex     = 1,
     [int]$Fps             = 30,
-    [switch]$NoDisplay                                    # no Rerun viewer
+    [switch]$Fresh,                                       # refuse to start if -Root already has a dataset
+    [switch]$PushToHub,
+    [switch]$DisplayData,                                 # also open Rerun
+    [switch]$NoDisplayCameras,
+    [switch]$TeleopTest                                   # free teleop first (not recorded), then confirm
 )
 
 $ErrorActionPreference = "Stop"
 
-# Run from the repo root (parent of this script's folder) so relative paths resolve.
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
@@ -62,10 +60,9 @@ if (-not (Test-Path $Python)) {
     throw "venv python not found at $Python. Activate/create the project venv first."
 }
 
-# Put venv executables (e.g. rerun.exe, spawned by --display_data) on PATH; the venv isn't activated.
+# Put venv executables (e.g. rerun.exe, spawned by -DisplayData) on PATH; the venv isn't activated.
 $env:PATH = "$(Join-Path $RepoRoot '.venv\Scripts');$env:PATH"
 
-# Force UTF-8 so console logging doesn't crash on cp1252 Windows shells.
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 
@@ -73,65 +70,38 @@ if ($RepoId -match "/eval_") {
     throw "'$RepoId' is an eval dataset name; use run_eval.ps1 for policy rollouts."
 }
 
-# --- Local HF cache handling (same rules as run_eval.ps1) ---
-$CacheDir = Join-Path $env:USERPROFILE ".cache\huggingface\lerobot\$($RepoId -replace '/', '\')"
-if ($Resume) {
-    if ($ClearCache) { throw "-Resume and -ClearCache are mutually exclusive." }
-    if (-not (Test-Path $CacheDir)) { throw "Nothing to resume: no cache at $CacheDir" }
-    Write-Host "Resuming into existing dataset ($CacheDir); recording $NumEpisodes MORE episodes." -ForegroundColor Yellow
-} elseif ($ClearCache) {
-    if (Test-Path $CacheDir) {
-        Write-Host "Clearing cache: $CacheDir" -ForegroundColor Yellow
-        Remove-Item -Recurse -Force -Confirm:$false $CacheDir
-    }
-} elseif (Test-Path $CacheDir) {
-    throw "Cache dir exists from a previous run: $CacheDir`nRe-run with -ClearCache to delete it, -Resume to continue it, or pass a different -RepoId."
-}
-
-$display = if ($NoDisplay) { "false" } else { "true" }
-$push    = if ($NoPush)    { "false" } else { "true" }
-
-# Must stay identical to the camera string in run_eval.ps1.
-$cameras = "{gripper_cam: {type: opencv, index_or_path: $GripperCamIndex, width: 640, height: 480, fps: $Fps, fourcc: MJPG}, " +
-           "top_cam: {type: opencv, index_or_path: $TopCamIndex, width: 640, height: 480, fps: $Fps, fourcc: MJPG}}"
-
 $cmd = @(
-    "-m", "lerobot.scripts.lerobot_record",
-    "--robot.type=so101_follower",
-    "--robot.port=$Port",
-    "--robot.id=$RobotId",
-    "--robot.calibration_dir=$CalibDir",
-    "--robot.cameras=$cameras",
-    "--teleop.type=so101_leader",
-    "--teleop.port=$LeaderPort",
-    "--teleop.id=$RobotId",
-    "--teleop.calibration_dir=$LeaderCalibDir",
-    "--dataset.repo_id=$RepoId",
-    "--dataset.no_stamp=true",                            # keep -RepoId as given (0.6.1 would timestamp it)
-    "--dataset.fps=$Fps",
-    "--dataset.num_episodes=$NumEpisodes",
-    "--dataset.single_task=$Task",
-    "--dataset.episode_time_s=$EpisodeTime",
-    "--dataset.reset_time_s=$ResetTime",
-    "--dataset.rgb_encoder.vcodec=h264",
-    "--dataset.push_to_hub=$push",
-    "--display_data=$display",
-    "--display_compressed_images=true"
+    "scripts/record_episodes.py",
+    "--repo-id=$RepoId",
+    "--root=$Root",
+    "--task=$Task",
+    "--num-episodes=$NumEpisodes",
+    "--robot-port=$RobotPort",
+    "--teleop-port=$TeleopPort",
+    "--robot-id=$RobotId",
+    "--teleop-id=$TeleopId",
+    "--robot-calib-dir=$RobotCalib",
+    "--teleop-calib-dir=$TeleopCalib",
+    "--gripper-cam=$GripperCamIndex",
+    "--top-cam=$TopCamIndex",
+    "--fps=$Fps"
 )
-if ($Resume) {
-    $cmd += "--resume=true"
-    $cmd += "--dataset.root=$CacheDir"
-}
 
-Write-Host "=== Teleop data collection ===" -ForegroundColor Cyan
-Write-Host "dataset : $RepoId   episodes: $NumEpisodes   push: $push"
-Write-Host "rate    : loop/dataset/cameras @ ${Fps} Hz   episode ${EpisodeTime}s, reset ${ResetTime}s"
-Write-Host "cameras : gripper=$GripperCamIndex  top=$TopCamIndex  (check they are not swapped before episode 0)"
-Write-Host ""
-Write-Host "$Python $($cmd -join ' ')" -ForegroundColor DarkGray
+if ($Fresh)             { $cmd += "--fresh" }
+if ($PushToHub)         { $cmd += "--push-to-hub" }
+if ($DisplayData)       { $cmd += "--display-data" }
+if ($NoDisplayCameras)  { $cmd += "--no-display-cameras" }
+if ($TeleopTest)        { $cmd += "--teleop-test" }
+
+$target = if ($NumEpisodes -gt 0) { "$NumEpisodes episodes" } else { "until q / Escape" }
+Write-Host "=== Episode recording (cube anywhere) ===" -ForegroundColor Cyan
+Write-Host "dataset : $RepoId"
+Write-Host "root    : $Root  (auto-appends if it already exists)"
+Write-Host "task    : $Task"
+Write-Host "session : $target"
+Write-Host "Keys: Enter=start episode | Right=save | Left=discard & redo | Esc=stop | q at prompt=quit"
 Write-Host ""
 
-# Python logging writes warnings to stderr; don't let that abort the run.
 $ErrorActionPreference = "Continue"
 $PSNativeCommandUseErrorActionPreference = $false
 

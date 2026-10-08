@@ -397,7 +397,10 @@ def main() -> int:
 
                 saved_in_block = 0
                 while saved_in_block < n_iters and not events["stop_recording"]:
+                    # Arrow keys pressed at the position prompt (e.g. to edit the typed number) are
+                    # caught by the recording listener; drop them so they can't end or discard this episode.
                     events["exit_early"] = False
+                    events["rerecord_episode"] = False
                     episode_index = dataset.num_episodes
                     iter_num = saved_in_block + 1
 
