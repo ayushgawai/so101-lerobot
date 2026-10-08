@@ -31,6 +31,22 @@ lerobot-teleoperate \
     --display_data=true
 ```
 
+To stream the data to Foxglove instead of Rerun, add ``--display_mode=foxglove``
+(then connect the Foxglove app to ``ws://127.0.0.1:8765``; override the port with ``--display_port=<port>``):
+
+```shell
+lerobot-teleoperate \
+    --robot.type=so101_follower \
+    --robot.port=/dev/tty.usbmodem58760431541 \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 30}}" \
+    --robot.id=black \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/tty.usbmodem58760431551 \
+    --teleop.id=blue \
+    --display_data=true \
+    --display_mode=foxglove
+```
+
 Example teleoperation with bimanual so100:
 
 ```shell
@@ -75,6 +91,7 @@ from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_openarm_follower,
+    bi_rebot_b601_follower,
     bi_so_follower,
     earthrover_mini_plus,
     hope_jr,
@@ -83,6 +100,7 @@ from lerobot.robots import (  # noqa: F401
     omx_follower,
     openarm_follower,
     reachy2,
+    rebot_b601_follower,
     so_follower,
     unitree_g1 as unitree_g1_robot,
 )
@@ -90,6 +108,8 @@ from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
     bi_openarm_leader,
+    bi_openarm_mini,
+    bi_rebot_102_leader,
     bi_so_leader,
     gamepad,
     homunculus,
@@ -100,13 +120,18 @@ from lerobot.teleoperators import (  # noqa: F401
     openarm_leader,
     openarm_mini,
     reachy2_teleoperator,
+    rebot_102_leader,
     so_leader,
     unitree_g1,
 )
 from lerobot.utils.import_utils import register_third_party_plugins
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import init_logging, move_cursor_up
-from lerobot.utils.visualization_utils import init_rerun, log_rerun_data, shutdown_rerun
+from lerobot.utils.visualization_utils import (
+    init_visualization,
+    log_visualization_data,
+    shutdown_visualization,
+)
 
 
 @dataclass
@@ -119,11 +144,14 @@ class TeleoperateConfig:
     teleop_time_s: float | None = None
     # Display all cameras on screen
     display_data: bool = False
-    # Display data on a remote Rerun server
+    # Visualization backend used when display_data is True: "rerun" or "foxglove".
+    display_mode: str = "rerun"
+    # For "rerun": IP of a remote server to send to. For "foxglove": interface to bind the WebSocket
+    # server to (127.0.0.1 for local only, 0.0.0.0 for all interfaces).
     display_ip: str | None = None
-    # Port of the remote Rerun server
+    # For "rerun": port of the remote server. For "foxglove": port to bind the WebSocket server to.
     display_port: int | None = None
-    # Whether to  display compressed images in Rerun
+    # Whether to display compressed (JPEG) images instead of raw frames
     display_compressed_images: bool = False
     # Show OpenCV windows with camera feeds side-by-side during teleoperation
     display_cameras: bool = False
@@ -137,6 +165,7 @@ def teleop_loop(
     robot_action_processor: RobotProcessorPipeline[tuple[RobotAction, RobotObservation], RobotAction],
     robot_observation_processor: RobotProcessorPipeline[RobotObservation, RobotObservation],
     display_data: bool = False,
+    display_mode: str = "rerun",
     duration: float | None = None,
     display_compressed_images: bool = False,
     display_cameras: bool = False,
@@ -150,8 +179,10 @@ def teleop_loop(
         teleop: The teleoperator device instance providing control actions.
         robot: The robot instance being controlled.
         fps: The target frequency for the control loop in frames per second.
-        display_data: If True, fetches robot observations and displays them in the console and Rerun.
-        display_compressed_images: If True, compresses images before sending them to Rerun for display.
+        display_data: If True, fetches robot observations and displays them in the console and the
+            visualization backend.
+        display_mode: Visualization backend to use when display_data is True ("rerun" or "foxglove").
+        display_compressed_images: If True, compresses images before sending them to the backend for display.
         duration: The maximum duration of the teleoperation loop in seconds. If None, the loop runs indefinitely.
         teleop_action_processor: An optional pipeline to process raw actions from the teleoperator.
         robot_action_processor: An optional pipeline to process actions before they are sent to the robot.
@@ -216,7 +247,8 @@ def teleop_loop(
             # Process robot observation through pipeline
             obs_transition = robot_observation_processor(obs)
 
-            log_rerun_data(
+            log_visualization_data(
+                display_mode,
                 observation=obs_transition,
                 action=teleop_action,
                 compress_images=display_compressed_images,
@@ -247,7 +279,9 @@ def teleoperate(cfg: TeleoperateConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))
     if cfg.display_data:
-        init_rerun(session_name="teleoperation", ip=cfg.display_ip, port=cfg.display_port)
+        init_visualization(
+            cfg.display_mode, session_name="teleoperation", ip=cfg.display_ip, port=cfg.display_port
+        )
     display_compressed_images = (
         True
         if (cfg.display_data and cfg.display_ip is not None and cfg.display_port is not None)
@@ -266,6 +300,7 @@ def teleoperate(cfg: TeleoperateConfig):
             robot=robot,
             fps=cfg.fps,
             display_data=cfg.display_data,
+            display_mode=cfg.display_mode,
             duration=cfg.teleop_time_s,
             teleop_action_processor=teleop_action_processor,
             robot_action_processor=robot_action_processor,
@@ -277,7 +312,7 @@ def teleoperate(cfg: TeleoperateConfig):
         pass
     finally:
         if cfg.display_data:
-            shutdown_rerun()
+            shutdown_visualization(cfg.display_mode)
         # Disconnect each device independently so one failure cannot leave the other
         # (e.g. the follower with torque on) connected.
         for device in (teleop, robot):

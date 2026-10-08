@@ -32,11 +32,10 @@ from pprint import pformat
 
 from lerobot.cameras.opencv import OpenCVCameraConfig
 from lerobot.common.control_utils import (
-    init_keyboard_listener,
-    is_headless,
     sanity_check_dataset_name,
     sanity_check_dataset_robot_compatibility,
 )
+from lerobot.configs.video import RGBEncoderConfig
 from lerobot.datasets import (
     LeRobotDataset,
     VideoEncodingManager,
@@ -51,6 +50,7 @@ from lerobot.teleoperators import make_teleoperator_from_config
 from lerobot.teleoperators.so_leader import SO101LeaderConfig
 from lerobot.utils.feature_utils import combine_feature_dicts
 from lerobot.utils.import_utils import register_third_party_plugins
+from lerobot.utils.keyboard_input import init_keyboard_listener, is_headless
 from lerobot.utils.utils import init_logging, log_say
 from lerobot.utils.visualization_utils import init_rerun
 
@@ -299,7 +299,7 @@ def main() -> int:
                 args.repo_id,
                 root=root,
                 batch_encoding_size=1,
-                vcodec=args.vcodec,
+                rgb_encoder=RGBEncoderConfig(vcodec=args.vcodec),
                 streaming_encoding=args.streaming_encoding,
                 encoder_threads=2,
                 image_writer_processes=0,
@@ -319,7 +319,7 @@ def main() -> int:
                 image_writer_processes=0,
                 image_writer_threads=4 * len(robot.cameras),
                 batch_encoding_size=1,
-                vcodec=args.vcodec,
+                rgb_encoder=RGBEncoderConfig(vcodec=args.vcodec),
                 streaming_encoding=args.streaming_encoding,
                 encoder_threads=2,
             )

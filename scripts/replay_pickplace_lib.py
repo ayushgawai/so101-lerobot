@@ -116,3 +116,25 @@ def wait_for_right_arrow(events: dict, *, poll_s: float = 0.05) -> str:
             events["rerecord_episode"] = False
             return "skip" if skip else "ready"
         time.sleep(poll_s)
+
+
+# Moved from lerobot_record.py, which became teleop-only in LeRobot 0.6.1. They take any object with
+# get_observation()/send_action(), so this module still needs no robot imports.
+def _capture_start_pose(robot) -> dict[str, float]:
+    """Read the robot's current joint positions as a {motor}.pos action dict."""
+    return {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
+
+
+def _return_to_start_pose(robot, start_pose: dict[str, float], duration_s: float = 2.5, fps: int = 30):
+    """Smoothly drive the robot back to the pose captured at recording start.
+
+    Interpolates from the current pose so the arm does not snap (same approach
+    as scripts/goto_start_pose.py).
+    """
+    current = _capture_start_pose(robot)
+    n_steps = max(1, int(duration_s * fps))
+    for i in range(1, n_steps + 1):
+        t = i / n_steps
+        action = {k: current[k] + t * (start_pose[k] - current[k]) for k in start_pose}
+        robot.send_action(action)
+        time.sleep(1 / fps)

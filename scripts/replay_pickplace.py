@@ -31,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from replay_pickplace_lib import (
     ReplayConfigError,
+    _capture_start_pose,
+    _return_to_start_pose,
     available_positions,
     episodes_for_position,
     load_position_log,
@@ -39,14 +41,13 @@ from replay_pickplace_lib import (
     wait_for_right_arrow,
 )
 
-from lerobot.common.control_utils import init_keyboard_listener, is_headless
 from lerobot.datasets import LeRobotDataset
 from lerobot.processor import make_default_robot_action_processor
 from lerobot.robots import make_robot_from_config
 from lerobot.robots.so_follower import SO101FollowerConfig
-from lerobot.scripts.lerobot_record import _capture_start_pose, _return_to_start_pose
 from lerobot.utils.constants import ACTION
 from lerobot.utils.import_utils import register_third_party_plugins
+from lerobot.utils.keyboard_input import init_keyboard_listener, is_headless
 from lerobot.utils.robot_utils import precise_sleep
 from lerobot.utils.utils import init_logging, log_say
 

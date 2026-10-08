@@ -1,8 +1,10 @@
 """
-Tests for lerobot-record: record_loop behaviour, _warmup_policy, display_cameras,
+Tests for lerobot-record: record_loop behaviour, display_cameras, camera fps check,
 and the sanity-check helpers in control_utils.
 
-Design: all robot/camera/policy hardware is mocked so tests run without any
+Policy rollouts moved to lerobot-rollout in LeRobot 0.6.1, so policy tests live there.
+
+Design: all robot/camera hardware is mocked so tests run without any
 physical device.  Tests are written in failing-first order — they describe the
 expected contract and will pass once the implementation satisfies it.
 """
@@ -10,13 +12,11 @@ expected contract and will pass once the implementation satisfies it.
 from __future__ import annotations
 
 import time
-from collections import deque
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-import torch
 
 # ---------------------------------------------------------------------------
 # Helpers / shared fixtures
@@ -62,40 +62,6 @@ def _make_events(exit_after: int = 0) -> dict:
     return events
 
 
-def _make_policy_config(visual_keys: list[str] | None = None) -> MagicMock:
-    from lerobot.configs.types import FeatureType
-
-    cfg = MagicMock()
-    cfg.use_amp = False
-    cfg.device = "cpu"
-    cfg.n_action_steps = 100
-
-    features = {
-        "observation.state": SimpleNamespace(type=FeatureType.STATE, shape=(STATE_DIM,)),
-    }
-    for key in (visual_keys or ["observation.images.gripper_cam", "observation.images.top_cam"]):
-        features[key] = SimpleNamespace(type=FeatureType.VISUAL, shape=(3, 480, 640))
-
-    cfg.input_features = features
-    return cfg
-
-
-def _make_policy(config: MagicMock | None = None) -> MagicMock:
-    policy = MagicMock()
-    policy.config = config or _make_policy_config()
-    policy._action_queue = deque([np.zeros(ACTION_DIM, dtype=np.float32)] * 100)
-
-    def _select_action(obs):
-        if not policy._action_queue:
-            policy._action_queue.extend(
-                [np.zeros(ACTION_DIM, dtype=np.float32)] * 100
-            )
-        return policy._action_queue.popleft()
-
-    policy.select_action.side_effect = _select_action
-    return policy
-
-
 def _identity_processor():
     """A processor pipeline stub that returns its input unchanged."""
     proc = MagicMock()
@@ -110,97 +76,6 @@ def _action_processor():
     proc.side_effect = lambda x: x[0]  # unwrap (action, obs) tuple, return action
     proc.reset = MagicMock()
     return proc
-
-
-# ---------------------------------------------------------------------------
-# 1.  _warmup_policy
-# ---------------------------------------------------------------------------
-
-class TestWarmupPolicy:
-    def test_calls_predict_action_twice(self):
-        """Warmup must run exactly two inference passes."""
-        from lerobot.scripts.lerobot_record import _warmup_policy
-
-        policy = _make_policy()
-        preprocessor = _identity_processor()
-        postprocessor = _identity_processor()
-        device = MagicMock()
-        device.type = "cpu"
-
-        with patch(
-            "lerobot.scripts.lerobot_record.predict_action",
-            return_value={"joint_0.pos": 0.0},
-        ) as mock_predict:
-            _warmup_policy(policy, preprocessor, postprocessor, device, task="test task")
-
-        assert mock_predict.call_count == 2
-
-    def test_resets_policy_after_warmup(self):
-        """policy.reset() must be called so the action queue is clean."""
-        from lerobot.scripts.lerobot_record import _warmup_policy
-
-        policy = _make_policy()
-        preprocessor = _identity_processor()
-        postprocessor = _identity_processor()
-        device = MagicMock()
-        device.type = "cpu"
-
-        with patch("lerobot.scripts.lerobot_record.predict_action", return_value={}):
-            _warmup_policy(policy, preprocessor, postprocessor, device, task=None)
-
-        policy.reset.assert_called_once()
-
-    def test_dummy_obs_shapes_match_policy_config(self):
-        """Dummy observations must have the shapes the policy config declares."""
-        from lerobot.configs.types import FeatureType
-        from lerobot.scripts.lerobot_record import _warmup_policy
-
-        captured_obs: list[dict] = []
-
-        def capture(observation, **kwargs):
-            captured_obs.append(dict(observation))
-            return {}
-
-        policy = _make_policy()
-        preprocessor = _identity_processor()
-        postprocessor = _identity_processor()
-        device = MagicMock()
-        device.type = "cpu"
-
-        with patch("lerobot.scripts.lerobot_record.predict_action", side_effect=capture):
-            _warmup_policy(policy, preprocessor, postprocessor, device, task=None)
-
-        obs = captured_obs[0]
-        for key, feature in policy.config.input_features.items():
-            assert key in obs, f"Missing key {key} in dummy observation"
-            arr = obs[key]
-            if feature.type == FeatureType.VISUAL:
-                c, h, w = feature.shape
-                assert arr.shape == (h, w, c), f"Wrong image shape for {key}"
-                assert arr.dtype == np.uint8
-            else:
-                assert arr.shape == feature.shape, f"Wrong state shape for {key}"
-                assert arr.dtype == np.float32
-
-    def test_warmup_passes_task_string(self):
-        """The task string must be forwarded to each predict_action call."""
-        from lerobot.scripts.lerobot_record import _warmup_policy
-
-        policy = _make_policy()
-        preprocessor = _identity_processor()
-        postprocessor = _identity_processor()
-        device = MagicMock()
-        device.type = "cpu"
-
-        with patch(
-            "lerobot.scripts.lerobot_record.predict_action", return_value={}
-        ) as mock_predict:
-            _warmup_policy(policy, preprocessor, postprocessor, device, task="Pick the cube")
-
-        for c in mock_predict.call_args_list:
-            assert c.kwargs.get("task") == "Pick the cube" or c.args[5] == "Pick the cube" or \
-                   any(a == "Pick the cube" for a in c.args), \
-                   "task string not forwarded to predict_action"
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +213,7 @@ class TestDisplayCameras:
 
 class TestRecordLoopActionGeneration:
     def test_no_policy_no_teleop_logs_warning(self, caplog):
-        """With neither policy nor teleop, a warning must be logged every iteration."""
+        """Without a teleop, a warning must be logged every iteration."""
         import logging
         from lerobot.scripts.lerobot_record import record_loop
 
@@ -360,104 +235,8 @@ class TestRecordLoopActionGeneration:
 
         warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
         assert any(
-            "No policy or teleoperator" in m for m in warning_msgs
-        ), "Expected 'No policy or teleoperator' warning not found"
-
-    def _make_mock_dataset(self) -> MagicMock:
-        """Minimal dataset mock matching the schema expected by build_dataset_frame."""
-        motor_names = [f"joint_{i}.pos" for i in range(ACTION_DIM)]
-        dataset = MagicMock()
-        dataset.fps = 30
-        dataset.features = {
-            "observation.state": {
-                "dtype": "float32",
-                "shape": (STATE_DIM,),
-                "names": motor_names,
-            },
-            "observation.images.gripper_cam": {
-                "dtype": "video",
-                "shape": (480, 640, 3),
-                "names": ["height", "width", "channels"],
-            },
-            "observation.images.top_cam": {
-                "dtype": "video",
-                "shape": (480, 640, 3),
-                "names": ["height", "width", "channels"],
-            },
-            "action": {
-                "dtype": "float32",
-                "shape": (ACTION_DIM,),
-                "names": motor_names,
-            },
-        }
-        return dataset
-
-    def test_policy_predict_action_called_each_loop(self):
-        """With a policy, predict_action must be called on every loop iteration."""
-        from lerobot.scripts.lerobot_record import record_loop
-
-        robot = _make_robot()
-        events = {"exit_early": False, "rerecord_episode": False, "stop_recording": False}
-        policy = _make_policy()
-        preprocessor = _identity_processor()
-        postprocessor = _identity_processor()
-        dataset = self._make_mock_dataset()
-
-        # predict_action returns a tensor; make_robot_action calls .squeeze(0) on it
-        action_return = torch.zeros(1, ACTION_DIM)
-
-        with patch(
-            "lerobot.scripts.lerobot_record.predict_action",
-            return_value=action_return,
-        ) as mock_predict:
-            record_loop(
-                robot=robot,
-                events=events,
-                fps=30,
-                teleop_action_processor=_action_processor(),
-                robot_action_processor=_action_processor(),
-                robot_observation_processor=_identity_processor(),
-                policy=policy,
-                preprocessor=preprocessor,
-                postprocessor=postprocessor,
-                dataset=dataset,
-                single_task="Pick the cube",
-                control_time_s=0.1,
-            )
-
-        assert mock_predict.call_count >= 1, "predict_action was never called with a policy"
-
-    def test_send_action_called_with_policy_output(self):
-        """robot.send_action must be called with the policy's predicted action."""
-        from lerobot.scripts.lerobot_record import record_loop
-
-        robot = _make_robot()
-        events = {"exit_early": False, "rerecord_episode": False, "stop_recording": False}
-        policy = _make_policy()
-        dataset = self._make_mock_dataset()
-        # predict_action returns a tensor; make_robot_action calls .squeeze(0) on it
-        action_return = torch.zeros(1, ACTION_DIM)
-
-        with patch(
-            "lerobot.scripts.lerobot_record.predict_action",
-            return_value=action_return,
-        ):
-            record_loop(
-                robot=robot,
-                events=events,
-                fps=30,
-                teleop_action_processor=_action_processor(),
-                robot_action_processor=_action_processor(),
-                robot_observation_processor=_identity_processor(),
-                policy=policy,
-                preprocessor=_identity_processor(),
-                postprocessor=_identity_processor(),
-                dataset=dataset,
-                single_task="Pick the cube",
-                control_time_s=0.1,
-            )
-
-        robot.send_action.assert_called()
+            "No teleoperator provided" in m for m in warning_msgs
+        ), "Expected 'No teleoperator provided' warning not found"
 
 
 # ---------------------------------------------------------------------------
@@ -571,11 +350,11 @@ class TestRecordLoopTiming:
         teleop.get_action.return_value = {f"joint_{i}.pos": 0.0 for i in range(ACTION_DIM)}
         logged = []
 
-        def slow_log(**kwargs):  # viewer stall: 200 ms per log call
+        def slow_log(*args, **kwargs):  # viewer stall: 200 ms per log call
             time.sleep(0.2)
             logged.append(kwargs)
 
-        with patch("lerobot.scripts.lerobot_record.log_rerun_data", side_effect=slow_log):
+        with patch("lerobot.scripts.lerobot_record.log_visualization_data", side_effect=slow_log):
             record_loop(
                 robot=robot,
                 events=events,
@@ -621,48 +400,6 @@ class TestRecordLoopTiming:
 
 
 # ---------------------------------------------------------------------------
-# 6.  _warmup_policy — error cases
-# ---------------------------------------------------------------------------
-
-class TestWarmupPolicyErrors:
-    def test_warmup_with_no_input_features_raises(self):
-        """Warmup must raise if the policy config has no input_features."""
-        from lerobot.scripts.lerobot_record import _warmup_policy
-
-        policy = _make_policy()
-        policy.config.input_features = {}  # empty — nothing to build dummy obs from
-
-        with patch("lerobot.scripts.lerobot_record.predict_action", return_value={}):
-            # Should not raise even with empty features — just runs with empty obs
-            _warmup_policy(
-                policy,
-                _identity_processor(),
-                _identity_processor(),
-                MagicMock(type="cpu"),
-                task=None,
-            )
-
-    def test_warmup_predict_action_exception_propagates(self):
-        """If predict_action raises, _warmup_policy must not swallow the error."""
-        from lerobot.scripts.lerobot_record import _warmup_policy
-
-        policy = _make_policy()
-
-        with patch(
-            "lerobot.scripts.lerobot_record.predict_action",
-            side_effect=RuntimeError("CUDA OOM"),
-        ):
-            with pytest.raises(RuntimeError, match="CUDA OOM"):
-                _warmup_policy(
-                    policy,
-                    _identity_processor(),
-                    _identity_processor(),
-                    MagicMock(type="cuda"),
-                    task=None,
-                )
-
-
-# ---------------------------------------------------------------------------
 # 7.  RecordConfig — field defaults and validation
 # ---------------------------------------------------------------------------
 
@@ -672,12 +409,6 @@ class TestRecordConfigDefaults:
 
         cfg = RecordConfig.__dataclass_fields__
         assert cfg["display_cameras"].default is False
-
-    def test_interpolation_multiplier_defaults_to_one(self):
-        from lerobot.scripts.lerobot_record import RecordConfig
-
-        cfg = RecordConfig.__dataclass_fields__
-        assert cfg["interpolation_multiplier"].default == 1
 
     def test_display_cameras_field_exists(self):
         from lerobot.scripts.lerobot_record import RecordConfig
@@ -699,39 +430,3 @@ class TestCameraFpsCheck:
 
         cameras = {"gripper_cam": SimpleNamespace(fps=30), "top_cam": SimpleNamespace(fps=None)}
         _check_camera_fps(cameras, dataset_fps=30)
-
-
-class TestReturnToStartPose:
-    def test_config_field_defaults_to_false(self):
-        from lerobot.scripts.lerobot_record import RecordConfig
-
-        cfg = RecordConfig.__dataclass_fields__
-        assert cfg["return_to_start_pose"].default is False
-
-    def test_capture_start_pose_keeps_only_pos_keys(self):
-        from lerobot.scripts.lerobot_record import _capture_start_pose
-
-        robot = _make_robot()
-        pose = _capture_start_pose(robot)
-        assert pose == {f"joint_{i}.pos": 0.0 for i in range(STATE_DIM)}
-        assert not any(isinstance(v, np.ndarray) for v in pose.values())
-
-    def test_return_to_start_pose_ends_at_target(self):
-        from lerobot.scripts.lerobot_record import _return_to_start_pose
-
-        # Arm currently at 10.0 on every joint, start pose was 0.0.
-        obs = _make_obs()
-        for i in range(STATE_DIM):
-            obs[f"joint_{i}.pos"] = 10.0
-        robot = _make_robot(obs)
-        start_pose = {f"joint_{i}.pos": 0.0 for i in range(STATE_DIM)}
-
-        with patch("lerobot.scripts.lerobot_record.time.sleep"):
-            _return_to_start_pose(robot, start_pose, duration_s=0.5, fps=10)
-
-        assert robot.send_action.call_count == 5
-        # Motion is a monotonic ramp and the final action is exactly the start pose.
-        sent = [c.args[0] for c in robot.send_action.call_args_list]
-        first_joint = [a["joint_0.pos"] for a in sent]
-        assert first_joint == sorted(first_joint, reverse=True)
-        assert sent[-1] == pytest.approx(start_pose)

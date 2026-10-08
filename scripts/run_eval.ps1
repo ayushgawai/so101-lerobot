@@ -4,10 +4,11 @@
   cache clearing and easily overridable parameters.
 
 .DESCRIPTION
-  Wraps `lerobot-record` (run via the venv python) with the eval defaults for
+  Wraps `lerobot-rollout --strategy.type=episodic` (run via the venv python; LeRobot 0.6.1
+  moved policy deployment out of `lerobot-record`) with the eval defaults for
   the eval-scoresheet protocol: 50 episodes, both USB cameras, AMP on, camera
-  display on. `lerobot-record` reads the policy type from the checkpoint, so the
-  same wrapper drives ACT and SmolVLA.
+  display on. The policy type is read from the checkpoint, so the same wrapper
+  drives ACT and SmolVLA. Between episodes the arm returns to its start pose.
 
   -Policy picks the checkpoint and eval dataset naming preset (act | smolvla);
   both policies are scored against the same protocol and the same 50 random cube
@@ -103,7 +104,7 @@ $env:PYTHONIOENCODING = "utf-8"
 # checkpoint and the eval dataset name differ.
 # RenameMap: smolvla_base declares its cameras as observation.images.camera{1,2},
 # so the robot's keys have to be mapped onto them exactly as during training.
-# lerobot_record overrides the checkpoint's own rename step with this map, so
+# lerobot-rollout overrides the checkpoint's own rename step with this map, so
 # leaving it empty for SmolVLA would feed the policy camera keys it never saw.
 $Presets = @{
     act = @{
@@ -162,7 +163,8 @@ $cameras = "{gripper_cam: {type: opencv, index_or_path: $GripperCamIndex, width:
            "top_cam: {type: opencv, index_or_path: $TopCamIndex, width: 640, height: 480, fps: $Fps, fourcc: MJPG}}"
 
 $cmd = @(
-    "-m", "lerobot.scripts.lerobot_record",
+    "-m", "lerobot.scripts.lerobot_rollout",
+    "--strategy.type=episodic",
     "--robot.type=so101_follower",
     "--robot.port=$Port",
     "--robot.id=$RobotId",
@@ -171,17 +173,25 @@ $cmd = @(
     "--policy.path=$Checkpoint",
     "--policy.device=$Device",
     "--policy.use_amp=$useAmp",
+    "--fps=$Fps",
+    "--dataset.fps=$Fps",
     "--dataset.repo_id=$RepoId",
+    "--dataset.no_stamp=true",                            # keep the protocol's eval_* names (0.6.1 would timestamp them)
     "--dataset.num_episodes=$NumEpisodes",
     "--dataset.single_task=$Task",
     "--display_cameras=$display",
-    "--return_to_start_pose=$goHome"
+    "--strategy.reset_to_initial_position=$goHome",       # arm back to start pose between episodes
+    "--return_to_initial_position=$goHome"                # ... and at the end of the session
 )
 
-if (-not [string]::IsNullOrEmpty($RenameMap)) { $cmd += "--dataset.rename_map=$RenameMap" }
+if (-not [string]::IsNullOrEmpty($RenameMap)) { $cmd += "--rename_map=$RenameMap" }
 if ($EpisodeTime -ne 0) { $cmd += "--dataset.episode_time_s=$EpisodeTime" }
 if ($ResetTime -ne 0)   { $cmd += "--dataset.reset_time_s=$ResetTime" }
-if ($CompilePolicy)     { $cmd += "--compile_policy=true" }
+if ($CompilePolicy) {
+    # Windows has no Triton, so the default inductor backend can't compile; cudagraphs replays the
+    # captured CUDA graph instead. 5 warmup inferences, as before, so the graph is built pre-episode.
+    $cmd += "--use_torch_compile=true", "--torch_compile_backend=cudagraphs", "--compile_warmup_inferences=5"
+}
 if ($DenoiseSteps -gt 0) { $cmd += "--policy.num_steps=$DenoiseSteps" }
 if ($InterpolationMultiplier -gt 1) { $cmd += "--interpolation_multiplier=$InterpolationMultiplier" }
 if ($Resume) {

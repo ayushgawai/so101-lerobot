@@ -66,7 +66,8 @@ lerobot-record `
   --dataset.num_episodes=2 `
   --dataset.episode_time_s=45 `
   --dataset.reset_time_s=15 `
-  --dataset.vcodec=h264 `
+  --dataset.rgb_encoder.vcodec=h264 `
+  --dataset.no_stamp=true `
   --display_data=true `
   --dataset.single_task="Pick up the cube and place it in the bowl"
 ```
@@ -90,7 +91,8 @@ lerobot-record `
   --dataset.num_episodes=30 `
   --dataset.episode_time_s=45 `
   --dataset.reset_time_s=15 `
-  --dataset.vcodec=h264 `
+  --dataset.rgb_encoder.vcodec=h264 `
+  --dataset.no_stamp=true `
   --display_data=true `
   --dataset.single_task="Pick up the cube and place it in the bowl"
 ```
@@ -102,7 +104,8 @@ lerobot-record `
 | `--dataset.num_episodes` | Number of demonstrations to record |
 | `--dataset.episode_time_s=45` | Max seconds per episode (press → to end early) |
 | `--dataset.reset_time_s=15` | Idle seconds between episodes to reset the scene |
-| `--dataset.vcodec=h264` | **Required on Windows** — the default `libsvtav1` encoder crashes |
+| `--dataset.rgb_encoder.vcodec=h264` | **Required on Windows** — the default `libsvtav1` encoder crashes (LeRobot ≥0.6.1 name; was `--dataset.vcodec`) |
+| `--dataset.no_stamp=true` | Keep `repo_id` as typed — LeRobot ≥0.6.1 otherwise appends a timestamp |
 | `--display_data=true` | **Required to see the camera feed** (Rerun viewer); off by default |
 | `--dataset.single_task` | Plain-text task description (should match what you demonstrate) |
 
@@ -168,7 +171,7 @@ If the viewer opens but feeds are black/missing, it's a camera index problem —
 
 The default AV1 encoder (`libsvtav1`) crashes the encoding worker process on this Windows build.
 
-**Fix** — use a different codec: `--dataset.vcodec=h264` (or try `hevc`).
+**Fix** — use a different codec: `--dataset.rgb_encoder.vcodec=h264` (or try `hevc`).
 
 ### 5. `TypeError: 'NoneType' object is not subscriptable` in `_batch_save_episode_video`
 

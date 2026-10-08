@@ -1,0 +1,48 @@
+# CI for the SO-101 LeRobot fork. Runs on every push to the working branch and on LeRobot upgrade
+# branches (upgrade-*), so a merge of a new upstream release is checked before anyone uses the arm.
+#
+# - Windows runner, Python 3.12, `uv sync --extra so101`: the same environment as the lab PC.
+# - tests/test_upgrade_invariants.py fails when an upgrade silently changes a project setting
+#   (wrapper CLI flags, motor register profile, calibration loading, video encoding defaults, scripts
+#   starting, leftover merge-conflict markers). The rest of tests/ covers the project's own code.
+# - No hardware or GPU is used: every test mocks the arm, cameras and serial ports.
+name: CI
+
+on:
+  push:
+    branches: [main-windows, "upgrade-*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.17"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # --locked: fail if pyproject.toml and uv.lock disagree (e.g. an upgrade merge forgot `uv lock`).
+      - name: Install (so101 extra, locked)
+        run: uv sync --locked --extra so101
+
+      - name: Library version
+        run: uv run --no-sync python -c "import importlib.metadata as m; print('lerobot', m.version('lerobot'))"
+
+      - name: Upgrade guards
+        run: uv run --no-sync pytest tests/test_upgrade_invariants.py -v
+
+      - name: Project tests
+        run: uv run --no-sync pytest tests -q --ignore=tests/test_upgrade_invariants.py
