@@ -130,6 +130,10 @@ def build(
         for i in tqdm(range(start, end), desc=f"episode {ep} ({end - start}/{length})", leave=False):
             item = src[base + i]
             frame = {key: item[key] for key in copy_keys}
+            # The source returns frames channel-first; 0.6.1's add_frame accepts only the
+            # channel-last layout the cameras record in.
+            for key in src.meta.video_keys:
+                frame[key] = frame[key].permute(1, 2, 0).numpy()
             frame["task"] = item["task"]
             dst.add_frame(frame)
         dst.save_episode()
