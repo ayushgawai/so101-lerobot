@@ -224,6 +224,28 @@ def test_no_merge_conflict_markers():
         for root in ("src", "scripts", "tests")
         for p in (REPO / root).rglob("*")
         if p.suffix in {".py", ".ps1", ".toml", ".md", ".json", ".yaml", ".yml"}
+        and not p.is_symlink()  # symlinks are checked by test_no_dangling_symlinks
         and marker.search(p.read_text(encoding="utf-8", errors="ignore"))
     ]
     assert not offenders, f"leftover merge-conflict markers: {offenders}"
+
+
+def test_no_dangling_symlinks():
+    """Upstream links some policy READMEs into docs/, which this repo doesn't carry.
+
+    Read from git rather than the disk: a Windows checkout turns symlinks into plain files, so a
+    dangling link only breaks on Linux/CI checkouts.
+    """
+    git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True, cwd=REPO, check=True).stdout  # noqa: E731
+    tracked = set(git("ls-files").splitlines())
+    dangling = []
+    for line in git("ls-files", "-s").splitlines():
+        mode, _, _, path = line.split(maxsplit=3)
+        if mode != "120000":
+            continue
+        target = git("cat-file", "-p", f":{path}").strip()
+        resolved = (Path(path).parent / target).as_posix()
+        resolved = str(Path(__import__("os").path.normpath(resolved)).as_posix())
+        if resolved not in tracked:
+            dangling.append(f"{path} -> {target}")
+    assert not dangling, f"symlinks to files this repo doesn't carry: {dangling}"
