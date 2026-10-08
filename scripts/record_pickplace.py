@@ -205,6 +205,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--display-cameras", action="store_true", default=True)
     p.add_argument("--no-display-cameras", action="store_false", dest="display_cameras")
     p.add_argument("--display-data", action="store_true", help="Also open Rerun.")
+    p.add_argument("--teleop-test", action="store_true",
+                   help="Free teleop (nothing recorded) to check arm + cameras, then confirm before collecting.")
     p.add_argument("--play-sounds", action="store_true", default=True)
     p.add_argument("--no-play-sounds", action="store_false", dest="play_sounds")
     p.add_argument("--vcodec", default="h264", help="h264 is more reliable on Windows.")
@@ -344,6 +346,32 @@ def main() -> int:
             input()
             show_camera_preview(robot)
 
+        if args.teleop_test:
+            print("\n=== Teleop test (nothing is recorded) ===")
+            print("Move the leader: check all 6 joints follow and both camera feeds are live.")
+            print("A 'Record loop is running slower' warning means cameras/loop can't hold the fps.")
+            print("Right arrow = done testing | Esc = quit")
+            events["exit_early"] = False
+            record_loop(
+                robot=robot,
+                events=events,
+                fps=args.fps,
+                teleop_action_processor=teleop_action_processor,
+                robot_action_processor=robot_action_processor,
+                robot_observation_processor=robot_observation_processor,
+                teleop=teleop,
+                control_time_s=-1,
+                display_data=args.display_data,
+                display_cameras=args.display_cameras,
+                display_compressed_images=True,
+            )
+            events["exit_early"] = False
+            if not events["stop_recording"]:
+                answer = input("\nStart data collection? [Y/n]: ").strip().lower()
+                if answer in {"n", "no", "q", "quit"}:
+                    print("Data collection skipped.")
+                    events["stop_recording"] = True
+
         with VideoEncodingManager(dataset):
             last_position: int | None = None
             last_n: int | None = 5
@@ -396,6 +424,7 @@ def main() -> int:
                         single_task=episode_task,
                         display_data=args.display_data,
                         display_cameras=args.display_cameras,
+                        display_compressed_images=True,
                     )
 
                     more_in_block = saved_in_block + 1 < n_iters
@@ -414,6 +443,7 @@ def main() -> int:
                             single_task=episode_task,
                             display_data=args.display_data,
                             display_cameras=args.display_cameras,
+                            display_compressed_images=True,
                         )
 
                     if events["rerecord_episode"]:
@@ -477,10 +507,14 @@ def main() -> int:
                 pass
         if dataset is not None:
             dataset.finalize()
-        if robot.is_connected:
-            robot.disconnect()
-        if teleop.is_connected:
-            teleop.disconnect()
+        # Disconnect each device independently so one failure (e.g. a latched motor
+        # fault) cannot leave the other connected or skip the Hub push below.
+        for device in (robot, teleop):
+            if device.is_connected:
+                try:
+                    device.disconnect()
+                except Exception as e:
+                    logging.error(f"Failed to disconnect {device}: {e}")
         if not is_headless() and listener is not None:
             listener.stop()
         if args.push_to_hub and dataset is not None:

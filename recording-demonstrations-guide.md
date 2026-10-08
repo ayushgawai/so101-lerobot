@@ -34,6 +34,19 @@ Verify:
 
 ---
 
+## Recommended: `scripts/run_record.ps1`
+
+The wrapper pins the rates and camera settings so every session matches eval: loop, dataset and
+cameras all at 30 Hz, the same camera names/indices/640x480/MJPG as `run_eval.ps1`, h264, and
+compressed Rerun images.
+
+```powershell
+.\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-test -NumEpisodes 2 -NoPush -ClearCache   # sanity
+.\scripts\run_record.ps1 -RepoId aakashv100/so101-pick-cube-v3                                       # full run
+```
+
+The raw commands below still work but don't set MJPG or compressed display.
+
 ## Sanity test (2 episodes)
 
 Always run a 2-episode test before a full 30-episode session to confirm cameras, encoding, and Hub upload all work.

@@ -91,7 +91,7 @@ On success, leave `failure_mode` empty or use `-`.
 
 | Policy | Checkpoint step / tag | Train data (HF id) | Notes |
 |--------|------------------------|--------------------|-------|
-| ACT | _TBD before first ACT eval_ | _TBD_ | |
+| ACT | `030000` | `aakashv100/so101-pick-place-positions` | Locked for Pose A real eval; path `outputs/train/act_so101_pick_place_positions/checkpoints/030000/pretrained_model` |
 | SmolVLA | _TBD before first SmolVLA eval_ | _TBD_ | |
 
 ---

@@ -14,6 +14,10 @@
 
 .EXAMPLE
   .\scripts\record_pickplace.ps1
+
+.EXAMPLE
+  # Teleop first to check the arm and cameras, then confirm to start collecting
+  .\scripts\record_pickplace.ps1 -TeleopTest
 #>
 [CmdletBinding()]
 param(
@@ -31,7 +35,8 @@ param(
     [switch]$Fresh,
     [switch]$PushToHub,
     [switch]$DisplayData,
-    [switch]$NoDisplayCameras
+    [switch]$NoDisplayCameras,
+    [switch]$TeleopTest                                   # free teleop first (not recorded), then confirm
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +48,9 @@ $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $Python)) {
     throw "venv python not found at $Python. Activate/create the project venv first."
 }
+
+# Put venv executables (e.g. rerun.exe, spawned by -DisplayData) on PATH; the venv isn't activated.
+$env:PATH = "$(Join-Path $RepoRoot '.venv\Scripts');$env:PATH"
 
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
@@ -66,6 +74,7 @@ if ($Fresh)             { $cmd += "--fresh" }
 if ($PushToHub)         { $cmd += "--push-to-hub" }
 if ($DisplayData)       { $cmd += "--display-data" }
 if ($NoDisplayCameras)  { $cmd += "--no-display-cameras" }
+if ($TeleopTest)        { $cmd += "--teleop-test" }
 
 Write-Host "=== Pick-and-place recording ===" -ForegroundColor Cyan
 Write-Host "dataset : $RepoId"

@@ -295,8 +295,12 @@ lerobot-teleoperate `
   --teleop.port=COM4 `
   --teleop.id=my_so_arm `
   --teleop.calibration_dir=./calibration/teleoperators/so_leader `
-  --display_data=true
+  --fps=30 `
+  --display_data=true `
+  --display_compressed_images=true
 ```
+
+`--fps=30` matches the cameras (no duplicated frames); compressed images stop Rerun hitting its memory limit.
 
 **Verify:** Move leader → follower mirrors all 6 joints including gripper/trigger. Ctrl+C to stop.
 

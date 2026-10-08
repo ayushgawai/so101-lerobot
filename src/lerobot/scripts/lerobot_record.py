@@ -70,6 +70,7 @@ lerobot-record \
 """
 
 import logging
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -329,6 +330,57 @@ def _warmup_policy(policy, preprocessor, postprocessor, device, task, n_passes: 
     logging.info("Policy warmup complete.")
 
 
+class _BackgroundRerunLogger:
+    """Logs to Rerun on a worker thread, keeping only the newest frame.
+
+    JPEG compression and gRPC sends to the viewer take ~6 ms and spike much higher when the
+    viewer lags or drops its connection. Doing that inline stalls the control/record loop;
+    here a slow viewer just shows fewer frames.
+    """
+
+    def __init__(self, compress_images: bool):
+        self._compress_images = compress_images
+        self._pending = None
+        self._closed = False
+        self._cond = threading.Condition()
+        self._thread = threading.Thread(target=self._run, name="rerun-logger", daemon=True)
+        self._thread.start()
+
+    def submit(self, observation, action) -> None:
+        with self._cond:
+            self._pending = (observation, action)  # overwrite: drop the frame the viewer didn't get to
+            self._cond.notify()
+
+    def close(self) -> None:
+        with self._cond:
+            self._closed = True
+            self._cond.notify()
+        self._thread.join(timeout=1.0)
+
+    def _run(self) -> None:
+        while True:
+            with self._cond:
+                while self._pending is None and not self._closed:
+                    self._cond.wait()
+                if self._pending is None:
+                    return
+                (observation, action), self._pending = self._pending, None
+            try:
+                log_rerun_data(observation=observation, action=action, compress_images=self._compress_images)
+            except Exception as e:
+                logging.warning(f"Rerun logging failed (recording continues): {e}")
+
+
+def _check_camera_fps(cameras: dict, dataset_fps: int) -> None:
+    """Each camera must deliver frames at the dataset rate, or rows get duplicated/stale frames."""
+    mismatched = {name: cam.fps for name, cam in cameras.items() if cam.fps is not None and cam.fps != dataset_fps}
+    if mismatched:
+        raise ValueError(
+            f"Camera fps {mismatched} does not match --dataset.fps={dataset_fps}. "
+            "Set every camera's fps to the dataset fps."
+        )
+
+
 def _capture_start_pose(robot) -> dict[str, float]:
     """Read the robot's current joint positions as a {motor}.pos action dict."""
     return {k: v for k, v in robot.get_observation().items() if k.endswith(".pos")}
@@ -433,6 +485,8 @@ def record_loop(
     # hesitates for tens of seconds before it starts would otherwise be cut off mid-task.
     if control_time_s is None or control_time_s < 0:
         control_time_s = float("inf")
+
+    rerun_logger = _BackgroundRerunLogger(display_compressed_images) if display_data else None
 
     no_action_count = 0
     timestamp = 0
@@ -562,10 +616,8 @@ def record_loop(
             frame = {**observation_frame, **action_frame, "task": single_task}
             dataset.add_frame(frame)
 
-        if display_data:
-            log_rerun_data(
-                observation=obs_processed, action=action_values, compress_images=display_compressed_images
-            )
+        if rerun_logger is not None:
+            rerun_logger.submit(obs_processed, action_values)
 
         dt_s = time.perf_counter() - start_loop_t
 
@@ -578,6 +630,10 @@ def record_loop(
         precise_sleep(max(sleep_time_s, 0.0))
 
         timestamp = time.perf_counter() - start_episode_t
+
+    # Daemon thread, so an exception above can't hang the process; this just stops it promptly.
+    if rerun_logger is not None:
+        rerun_logger.close()
 
     # Keep the OpenCV "cameras" window open across episode/reset cycles.
     # Destroying it here makes the feed disappear from the 2nd iteration on
@@ -595,6 +651,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         if (cfg.display_data and cfg.display_ip is not None and cfg.display_port is not None)
         else cfg.display_compressed_images
     )
+
+    _check_camera_fps(getattr(cfg.robot, "cameras", {}), cfg.dataset.fps)
 
     robot = make_robot_from_config(cfg.robot)
     teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
@@ -773,6 +831,7 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                         single_task=cfg.dataset.single_task,
                         display_data=cfg.display_data,
                         display_cameras=cfg.display_cameras,
+                        display_compressed_images=display_compressed_images,
                     )
 
                 if events["rerecord_episode"]:
@@ -804,10 +863,14 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
         if dataset:
             dataset.finalize()
 
-        if robot.is_connected:
-            robot.disconnect()
-        if teleop and teleop.is_connected:
-            teleop.disconnect()
+        # Disconnect each device independently so one failure cannot leave the other
+        # (e.g. the follower with torque on) connected, or skip the Hub push below.
+        for device in (robot, teleop):
+            if device is not None and device.is_connected:
+                try:
+                    device.disconnect()
+                except Exception as e:
+                    logging.error(f"Failed to disconnect {device}: {e}")
 
         if not is_headless() and listener:
             listener.stop()

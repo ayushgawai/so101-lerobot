@@ -558,6 +558,42 @@ class TestRecordLoopTiming:
             robot_observation_processor=_identity_processor(),
         )
 
+    def test_slow_rerun_viewer_does_not_slow_the_loop(self):
+        """A stalled Rerun viewer must not drag the control/record loop below its fps."""
+        from lerobot.scripts.lerobot_record import record_loop
+
+        robot = _make_robot()
+        events = {"exit_early": False, "rerecord_episode": False, "stop_recording": False}
+        robot.get_observation.side_effect = lambda: _make_obs()
+        from lerobot.teleoperators import Teleoperator
+
+        teleop = MagicMock(spec=Teleoperator)
+        teleop.get_action.return_value = {f"joint_{i}.pos": 0.0 for i in range(ACTION_DIM)}
+        logged = []
+
+        def slow_log(**kwargs):  # viewer stall: 200 ms per log call
+            time.sleep(0.2)
+            logged.append(kwargs)
+
+        with patch("lerobot.scripts.lerobot_record.log_rerun_data", side_effect=slow_log):
+            record_loop(
+                robot=robot,
+                events=events,
+                fps=30,
+                teleop_action_processor=_action_processor(),
+                robot_action_processor=_action_processor(),
+                robot_observation_processor=_identity_processor(),
+                teleop=teleop,
+                control_time_s=0.5,
+                display_data=True,
+            )
+
+        # ~15 iterations at 30 Hz; a blocking 200 ms log call would allow only ~3.
+        assert robot.get_observation.call_count >= 10, (
+            f"only {robot.get_observation.call_count} loop iterations in 0.5 s"
+        )
+        assert logged, "Rerun logging must still happen, just off the control thread"
+
     def test_get_observation_called_at_least_fps_times(self):
         """robot.get_observation must be called roughly fps × control_time_s times."""
         from lerobot.scripts.lerobot_record import record_loop
@@ -647,6 +683,22 @@ class TestRecordConfigDefaults:
         from lerobot.scripts.lerobot_record import RecordConfig
 
         assert "display_cameras" in RecordConfig.__dataclass_fields__
+
+
+class TestCameraFpsCheck:
+    def test_camera_fps_mismatch_raises(self):
+        """A camera running at a different rate than the dataset must be rejected up front."""
+        from lerobot.scripts.lerobot_record import _check_camera_fps
+
+        cameras = {"gripper_cam": SimpleNamespace(fps=30), "top_cam": SimpleNamespace(fps=60)}
+        with pytest.raises(ValueError, match="top_cam"):
+            _check_camera_fps(cameras, dataset_fps=30)
+
+    def test_matching_or_unset_camera_fps_passes(self):
+        from lerobot.scripts.lerobot_record import _check_camera_fps
+
+        cameras = {"gripper_cam": SimpleNamespace(fps=30), "top_cam": SimpleNamespace(fps=None)}
+        _check_camera_fps(cameras, dataset_fps=30)
 
 
 class TestReturnToStartPose:

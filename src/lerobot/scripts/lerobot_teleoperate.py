@@ -258,10 +258,9 @@ def teleoperate(cfg: TeleoperateConfig):
     robot = make_robot_from_config(cfg.robot)
     teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
 
-    teleop.connect()
-    robot.connect()
-
     try:
+        teleop.connect()
+        robot.connect()
         teleop_loop(
             teleop=teleop,
             robot=robot,
@@ -279,8 +278,14 @@ def teleoperate(cfg: TeleoperateConfig):
     finally:
         if cfg.display_data:
             shutdown_rerun()
-        teleop.disconnect()
-        robot.disconnect()
+        # Disconnect each device independently so one failure cannot leave the other
+        # (e.g. the follower with torque on) connected.
+        for device in (teleop, robot):
+            if device.is_connected:
+                try:
+                    device.disconnect()
+                except Exception as e:
+                    logging.error(f"Failed to disconnect {device}: {e}")
 
 
 def main():

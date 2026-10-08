@@ -108,7 +108,8 @@ def log_rerun_data(
                         rr.log(f"{key}_{i}", rr.Scalars(float(vi)))
                 else:
                     img_entity = rr.Image(arr).compress() if compress_images else rr.Image(arr)
-                    rr.log(key, entity=img_entity, static=True)
+                    # Live teleop/record streams must not be static or the viewer never updates frames.
+                    rr.log(key, entity=img_entity)
 
     if action:
         for k, v in action.items():

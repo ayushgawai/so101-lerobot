@@ -561,12 +561,27 @@ class SerialMotorsBus(MotorsBusBase):
                 try:
                     self.disable_torque(motor, num_retry=5)
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to disable torque on motor '{motor}' during disconnect "
-                        f"(likely a latched hardware fault); closing the port anyway: {e}"
-                    )
+                    # Status packets carry the motor's fault flags, so a latched fault (e.g. Overload)
+                    # makes an applied write look failed. Read the torque back before calling it a failure.
+                    if self._torque_reads_off(motor):
+                        logger.warning(
+                            f"Motor '{motor}' has a latched hardware fault ({e}). Its torque is off, so the "
+                            "arm is safe. Power-cycle the arm before the next run to clear the fault."
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to disable torque on motor '{motor}' during disconnect "
+                            f"(likely a latched hardware fault); closing the port anyway: {e}"
+                        )
 
         self.port_handler.closePort()
+
+    def _torque_reads_off(self, motor: str) -> bool:
+        """Read Torque_Enable ignoring the status packet's fault flags; False if the read itself fails."""
+        m = self.motors[motor]
+        addr, length = get_address(self.model_ctrl_table, m.model, "Torque_Enable")
+        value, comm, _ = self._read(addr, length, m.id, num_retry=2, raise_on_error=False)
+        return self._is_comm_success(comm) and value == 0
         logger.debug(f"{self.__class__.__name__} disconnected.")
 
     @classmethod

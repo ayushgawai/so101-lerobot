@@ -49,6 +49,37 @@ Gripper                  6   1 / 345
 """
 
 
+# Gripper stall relief. Measured on this gripper holding the cube: commanding the goal 50 ticks past the
+# contact point gives ~17% load, >=200 ticks saturates at the 50% torque limit, and a saturated stall held
+# ~2 s trips the latched Overload fault. So once the gripper has been blocked while closing for
+# GRIPPER_STALL_S, the goal is capped at GRIPPER_HOLD_SQUEEZE_TICKS past where it stopped.
+GRIPPER_HOLD_SQUEEZE_TICKS = 50
+GRIPPER_STALL_S = 0.5
+GRIPPER_STALL_MOVE = 0.5  # moving less than this (0-100 units) between commands counts as blocked
+
+PORT_RECOVERY_STEPS = """\
+Next steps: the serial port did not open. Check the USB cable and the COM port
+(`lerobot-find-port`), and close any other program using it.
+"""
+
+CAMERA_RECOVERY_STEPS = """\
+Next steps: a camera failed to open. Check the camera indices (`lerobot-find-cameras opencv`)
+and that no other program (or a previous run) is still using them.
+"""
+
+MOTOR_RECOVERY_STEPS = """\
+Next steps:
+  1. Read the error below for the motor ID: 5 = wrist_roll, 6 = gripper.
+  2. Power-cycle the arm (unplug motor power ~10 s, replug). A latched Overload/Overheat
+     fault only clears when the motor loses power; rerunning will not fix it.
+  3. Reseat the 3-pin cable on that motor and the one before it in the daisy chain, and
+     check the USB cable and the COM port (`lerobot-find-port`).
+  4. If it is the gripper: avoid holding it closed on the object or against its stop, and
+     let it cool before retrying.
+  5. Stop runs with a single Ctrl+C and wait a few seconds before relaunching.
+"""
+
+
 class SOFollower(Robot):
     """
     Generic SO follower base implementing common functionality for SO-100/101/10X.
@@ -76,6 +107,8 @@ class SOFollower(Robot):
             calibration=self.calibration,
         )
         self.cameras = make_cameras_from_configs(config.cameras)
+        self._gripper_last_pos: float | None = None
+        self._gripper_blocked_since: float | None = None
 
     @property
     def _motors_ft(self) -> dict[str, type]:
@@ -110,18 +143,46 @@ class SOFollower(Robot):
         and torque can be safely disabled to run calibration.
         """
 
-        self.bus.connect()
-        if not self.is_calibrated and calibrate:
-            logger.info(
-                "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
-            )
-            self.calibrate()
+        in_camera_stage = False
+        try:
+            self.bus.connect()
+            if not self.is_calibrated and calibrate:
+                logger.info(
+                    "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
+                )
+                self.calibrate()
 
-        for cam in self.cameras.values():
-            cam.connect()
+            in_camera_stage = True
+            for cam in self.cameras.values():
+                cam.connect()
+            in_camera_stage = False
 
-        self.configure()
+            self.configure()
+        except Exception:
+            if not self.bus.is_connected:
+                steps = PORT_RECOVERY_STEPS
+            elif in_camera_stage:
+                steps = CAMERA_RECOVERY_STEPS
+            else:
+                steps = MOTOR_RECOVERY_STEPS
+            logger.error(f"{self} failed to connect.\n{steps}")
+            self._release_hardware()
+            raise
         logger.info(f"{self} connected.")
+
+    def _release_hardware(self) -> None:
+        """Best-effort cleanup: torque off + close the port, and release cameras. Never raises."""
+        if self.bus.is_connected:
+            try:
+                self.bus.disconnect(self.config.disable_torque_on_disconnect)
+            except Exception as e:
+                logger.warning(f"Could not cleanly disconnect the motor bus: {e}")
+        for name, cam in self.cameras.items():
+            if cam.is_connected:
+                try:
+                    cam.disconnect()
+                except Exception as e:
+                    logger.warning(f"Could not disconnect camera '{name}': {e}")
 
     @property
     def is_calibrated(self) -> bool:
@@ -262,15 +323,42 @@ class SOFollower(Robot):
             goal_present_pos = {key: (g_pos, present_pos[key]) for key, g_pos in goal_pos.items()}
             goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
 
+        if "gripper" in goal_pos:
+            goal_pos["gripper"] = self._relieve_gripper_stall(goal_pos["gripper"])
+
         # Send goal position to the arm
         self.bus.sync_write("Goal_Position", goal_pos)
         return {f"{motor}.pos": val for motor, val in goal_pos.items()}
 
+    def _relieve_gripper_stall(self, goal: float) -> float:
+        """Cap how far past an object the gripper is pushed once it is blocked (closing = lower values)."""
+        # sync_read ignores the status fault flags, so a latched fault can't crash the control loop here.
+        present = self.bus.sync_read("Present_Position", ["gripper"])["gripper"]
+        cal = self.calibration["gripper"]
+        squeeze = GRIPPER_HOLD_SQUEEZE_TICKS * 100 / (cal.range_max - cal.range_min)
+        moving = self._gripper_last_pos is not None and abs(present - self._gripper_last_pos) > GRIPPER_STALL_MOVE
+        self._gripper_last_pos = present
+
+        if moving or goal >= present - squeeze:
+            self._gripper_blocked_since = None
+            return goal
+        now = time.perf_counter()
+        if self._gripper_blocked_since is None:
+            self._gripper_blocked_since = now
+        if now - self._gripper_blocked_since < GRIPPER_STALL_S:
+            return goal
+        return present - squeeze
+
     @check_if_not_connected
     def disconnect(self):
-        self.bus.disconnect(self.config.disable_torque_on_disconnect)
-        for cam in self.cameras.values():
-            cam.disconnect()
+        try:
+            self.bus.disconnect(self.config.disable_torque_on_disconnect)
+        except Exception:
+            logger.error(f"{self} failed to disconnect cleanly.\n{MOTOR_RECOVERY_STEPS}")
+            raise
+        finally:
+            for cam in self.cameras.values():
+                cam.disconnect()
 
         logger.info(f"{self} disconnected.")
 
