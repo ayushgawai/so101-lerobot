@@ -62,7 +62,9 @@ dependencies = [
     "torch>=2.7,<2.12.0",
     "torchvision>=0.22.0,<0.27.0",
     "numpy>=2.0.0,<2.3.0", # NOTE: Explicitly listing numpy helps the resolver converge faster. Upper bound imposed by opencv-python-headless.
-    "opencv-python-headless>=4.9.0,<4.14.0",
+    # GUI build (not -headless): the SO-101 scripts open OpenCV camera windows (record_pickplace
+    # preview, --display_cameras). Same cv2 module, so the two must not be installed together.
+    "opencv-python>=4.9.0,<4.14.0",
     "Pillow>=10.0.0,<13.0.0",
     "einops>=0.8.0,<0.9.0",
 

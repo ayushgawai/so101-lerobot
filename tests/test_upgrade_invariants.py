@@ -155,6 +155,18 @@ def test_calibration_files_load(kind, folder):
     assert {name: asdict(cal) for name, cal in device.calibration.items()} == stored
 
 
+def test_opencv_has_gui_support():
+    """The camera windows (record_pickplace preview, --display_cameras) need a GUI OpenCV build.
+
+    LeRobot depends on opencv-python-headless; installing it alongside or instead of opencv-python
+    leaves cv2 without HighGUI and cv2.namedWindow raises "The function is not implemented".
+    """
+    import cv2
+
+    gui = next(line for line in cv2.getBuildInformation().splitlines() if line.strip().startswith("GUI:"))
+    assert "NONE" not in gui, f"cv2 has no GUI backend ({gui.strip()}); camera windows will crash"
+
+
 def test_project_camera_config_is_accepted():
     from lerobot.cameras.opencv import OpenCVCameraConfig
 
