@@ -41,8 +41,15 @@ jobs:
       - name: Library version
         run: uv run --no-sync python -c "import importlib.metadata as m; print('lerobot', m.version('lerobot'))"
 
+      # On failure, each failed test is also emitted as an error annotation (visible without the log).
       - name: Upgrade guards
-        run: uv run --no-sync pytest tests/test_upgrade_invariants.py -v
+        shell: bash
+        run: |
+          uv run --no-sync pytest tests/test_upgrade_invariants.py -v --junitxml=guards.xml \
+            || { uv run --no-sync python .github/scripts/annotate_junit.py guards.xml; exit 1; }
 
       - name: Project tests
-        run: uv run --no-sync pytest tests -q --ignore=tests/test_upgrade_invariants.py
+        shell: bash
+        run: |
+          uv run --no-sync pytest tests -q --ignore=tests/test_upgrade_invariants.py --junitxml=tests.xml \
+            || { uv run --no-sync python .github/scripts/annotate_junit.py tests.xml; exit 1; }
