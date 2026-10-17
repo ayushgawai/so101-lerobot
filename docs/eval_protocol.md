@@ -91,7 +91,7 @@ On success, leave `failure_mode` empty or use `-`.
 
 | Policy | Checkpoint step / tag | Train data (HF id) | Notes |
 |--------|------------------------|--------------------|-------|
-| ACT | `030000` | `aakashv100/so101-pick-place-positions` | Locked for Pose A real eval; path `outputs/train/act_so101_pick_place_positions/checkpoints/030000/pretrained_model` |
+| ACT | `030000` | `aakashv100/so101-pick-place-positions` | Locked for Pose A real eval. The original checkpoint was lost before any trial was scored; retrained 2026-10-16 with the same data and step count (W&B `lup7vvit`). Hub: `aakashv100/act_so101_pick_place_positions` (root = 030000); local `outputs/train/act_so101_pick_place_positions_retrain2/checkpoints/030000/pretrained_model` |
 | SmolVLA | _TBD before first SmolVLA eval_ | _TBD_ | |
 
 ---
