@@ -21,9 +21,8 @@ leader arm read over serial, per the plan's Sec.5 "not yet done" list:
 
 1. Reads `robot.get_action()` from a LeRobotSO101Interface(kind="leader")
    each tick instead of keyboard deltas.
-2. LeRobotSO101Interface.get_mapped_actions_vectorized() targets *radians*
-   (built for the Isaac-Lab task's action space) -- converted x180/pi here
-   since this raw script's joint drives are authored in degrees.
+2. The minimal teleop adapter explicitly selects normalized LeRobot units
+   for both arms, then maps the accepted command to USD joint-drive degrees.
 3. Requires `lerobot` (this repo's root package, `.[so101]` extra)
    installed into whatever Python runs this script -- NOT present in a
    stock Isaac Sim python by default.
@@ -65,6 +64,8 @@ physics-driven) throughout -- only its *starting* pose is overridden, not
 puppeteered every tick.
 """
 import argparse
+import json
+import math
 import os
 import sys
 import time
@@ -83,8 +84,26 @@ _REPO_ROOT_DIR = os.path.dirname(_REPO_SOURCE_DIR)
 # transitively need omni/pxr and are imported only after SimulationApp().
 from sim_to_real_so101.utils import fixed_workspace  # noqa: E402
 from sim_to_real_so101.utils.wrist_roll_alignment import WristRollAlignment  # noqa: E402
+from sim_to_real_so101.utils.dual_teleop_control import DualActionGate  # noqa: E402
+from sim_to_real_so101.utils.teleop_hardware import (  # noqa: E402
+    TeleopSO101Interface as LeRobotSO101Interface, connect_calibrated, validate_calibration,
+)
 
 parser = argparse.ArgumentParser(description="Raw Isaac Sim SO-101 leader-arm teleop agent (no Isaac Lab).")
+parser.add_argument("--scene_profile", choices=("legacy", "codex"), default="legacy")
+parser.add_argument("--usd_path", default=None, help="Override the profile's USD stage.")
+parser.add_argument("--start_paused", action="store_true", help="Hold initial follower pose until F8; F9 pauses both outputs.")
+parser.add_argument("--startup_mode", choices=("match", "ramp"), default="match",
+                    help="match requires aligned arm poses; ramp lets F8 converge from the measured follower pose at 10 normalized units/s.")
+parser.add_argument("--require_camera_alignment", action="store_true", help="Require a successful measured dual-camera layout before connecting motors.")
+parser.add_argument("--show_cameras", action="store_true", help="Show fixed and wrist camera views in Kit.")
+parser.add_argument("--camera_indices", type=int, nargs=2, default=(1, 0), metavar=("FIXED", "WRIST"))
+parser.add_argument("--wrist_roll_offset_deg", type=float, default=-90.0, help="Existing wrist correction; verify against the real arm before grasping.")
+parser.add_argument("--control_hz", type=float, default=30.0)
+parser.add_argument("--control_timeout_s", type=float, default=2.0,
+                    help="Pause and require F8 after this loop gap in seconds. Shorter delays continue with a capped command step (default: 2).")
+parser.add_argument("--preflight_only", action="store_true", help="Validate files/configuration without starting Kit or opening hardware.")
+parser.add_argument("--sim_test_seconds", type=float, default=0., help="Finite physics smoke test; never opens serial ports or cameras.")
 parser.add_argument("--headless", action="store_true", default=False, help="Run without a viewport window.")
 parser.add_argument("--port", type=str, default=os.getenv("TELEOP_PORT", "COM4"), help="Leader arm serial port.")
 parser.add_argument(
@@ -96,7 +115,7 @@ parser.add_argument(
 parser.add_argument(
     "--calibration_dir",
     type=str,
-    default=os.path.join(_REPO_ROOT_DIR, "calibration"),
+    default=os.path.join(os.path.dirname(_REPO_ROOT_DIR), "calibration"),
     help="Root calibration directory (expects <this>/teleoperators/so_leader/<robot_id>.json). "
     "Sets HF_LEROBOT_CALIBRATION -- must be set before `lerobot` is imported.",
 )
@@ -157,6 +176,38 @@ parser.add_argument(
     "Unset (default) = use the layout's bowl.yaw_deg (0.0 if no --layout given).",
 )
 args_cli = parser.parse_args()
+if not math.isfinite(args_cli.control_hz) or args_cli.control_hz <= 0:
+    parser.error("--control_hz must be positive and finite")
+if not math.isfinite(args_cli.control_timeout_s) or args_cli.control_timeout_s <= 0:
+    parser.error("--control_timeout_s must be positive and finite")
+if args_cli.control_timeout_s <= 1/args_cli.control_hz:
+    parser.error("--control_timeout_s must exceed the nominal control period (1 / --control_hz)")
+if not math.isfinite(args_cli.sim_test_seconds) or args_cli.sim_test_seconds < 0:
+    parser.error("--sim_test_seconds must be finite and nonnegative")
+if not math.isfinite(args_cli.wrist_roll_offset_deg):
+    parser.error("--wrist_roll_offset_deg must be finite")
+SIM_TEST = args_cli.sim_test_seconds > 0
+if args_cli.startup_mode == "ramp" and not SIM_TEST:
+    args_cli.start_paused = True
+if args_cli.scene_profile == "codex" and args_cli.follower_port and not SIM_TEST:
+    args_cli.start_paused = True
+if args_cli.follower_port and args_cli.follower_port.upper() == args_cli.port.upper():
+    parser.error("Leader and follower ports must differ")
+if args_cli.headless and args_cli.start_paused and not SIM_TEST:
+    parser.error("--start_paused requires a visible Kit window for F8/F9 controls")
+if args_cli.scene_profile == "codex" and args_cli.layout is None:
+    args_cli.layout = os.path.join(_REPO_ROOT_DIR, "calibration", "workspaces", "codex_pick_place_photo.json")
+if args_cli.require_camera_alignment:
+    if any(getattr(args_cli, name) is not None for name in ("cube_pos", "bowl_pos", "cube_yaw_deg", "bowl_yaw_deg")):
+        parser.error("Position overrides invalidate camera registration; update the measured layout instead")
+    if args_cli.layout is None or not os.path.isfile(args_cli.layout):
+        parser.error("Run align_dual_camera_workspace.py and pass its measured --layout first")
+    with open(args_cli.layout, encoding="utf-8") as stream:
+        alignment = json.load(stream).get("alignment", {})
+    if alignment.get("status") != "passed":
+        parser.error("The layout is nominal/unmeasured; a passed two-camera registration is required")
+    if args_cli.follower_port and alignment.get("source_mode") != "live":
+        parser.error("Real follower operation requires live registration, not offline test frames")
 
 # Fail fast on a bad --robot_id/--calibration_dir (e.g. a typo) before paying
 # for Kit's ~30s+ boot below -- lerobot's own error for a missing calibration
@@ -165,7 +216,7 @@ args_cli = parser.parse_args()
 _CALIBRATION_FILE = os.path.join(
     args_cli.calibration_dir, "teleoperators", "so_leader", f"{args_cli.robot_id}.json"
 )
-if not os.path.isfile(_CALIBRATION_FILE):
+if not SIM_TEST and not os.path.isfile(_CALIBRATION_FILE):
     print(f"[ERROR]: Calibration file not found: {_CALIBRATION_FILE}", file=sys.stderr)
     print(
         "[ERROR]: Check --robot_id / --calibration_dir (or TELEOP_ID / TELEOP_PORT env vars).",
@@ -173,7 +224,7 @@ if not os.path.isfile(_CALIBRATION_FILE):
     )
     sys.exit(1)
 
-if args_cli.follower_port is not None:
+if args_cli.follower_port is not None and not SIM_TEST:
     _FOLLOWER_CALIBRATION_FILE = os.path.join(
         args_cli.calibration_dir, "robots", "so_follower", f"{args_cli.follower_robot_id}.json"
     )
@@ -181,6 +232,22 @@ if args_cli.follower_port is not None:
         print(f"[ERROR]: Follower calibration file not found: {_FOLLOWER_CALIBRATION_FILE}", file=sys.stderr)
         print("[ERROR]: Check --follower_robot_id / --calibration_dir.", file=sys.stderr)
         sys.exit(1)
+
+args_cli.calibration_dir = os.path.abspath(args_cli.calibration_dir)
+try:
+    if not SIM_TEST:
+        validate_calibration(_CALIBRATION_FILE)
+        if args_cli.follower_port:
+            validate_calibration(_FOLLOWER_CALIBRATION_FILE)
+except ValueError as exc:
+    parser.error(str(exc))
+
+_DEMO_DIR = os.path.join(_REPO_SOURCE_DIR, "sim_to_real_so101", "demo")
+REAL_TO_SIM_USD = os.path.abspath(args_cli.usd_path or os.path.join(
+    _DEMO_DIR, "codex-pick-place-table.usd" if args_cli.scene_profile == "codex" else "real-to-sim.usd"
+))
+if not os.path.isfile(REAL_TO_SIM_USD):
+    parser.error(f"USD scene does not exist: {REAL_TO_SIM_USD}")
 
 def _parse_vec3_str(arg_name: str, value: str | None) -> tuple[float, float, float] | None:
     """Fail fast on a malformed --cube_pos/--bowl_pos before paying for Kit's
@@ -240,6 +307,15 @@ RESOLVED_BOWL_POSE = fixed_workspace.resolve_bowl_pose(
 # that constant is what resolves calibration/teleoperators/so_leader/<id>.json.
 os.environ["HF_LEROBOT_CALIBRATION"] = args_cli.calibration_dir
 
+if args_cli.preflight_only:
+    print(f"[PASS] Scene file: {REAL_TO_SIM_USD}")
+    print(f"[PASS] Calibration root: {args_cli.calibration_dir}")
+    print(f"[PASS] Leader: {args_cli.port}, id={args_cli.robot_id}; follower: {args_cli.follower_port}, id={args_cli.follower_robot_id}")
+    print(f"[PASS] Layout: {WORKSPACE_LAYOUT.source}; cube={RESOLVED_CUBE_POSE.xyz_world_m}; bowl={RESOLVED_BOWL_POSE.xyz_world_m}")
+    print(f"[PASS] Control: {args_cli.control_hz:g} Hz; hard gap limit={args_cli.control_timeout_s:g}s; maximum command time step={min(1/args_cli.control_hz, 1/30):.4f}s")
+    print("[PASS] File/config preflight only; hardware, EEPROM and Isaac runtime have not been checked.")
+    sys.exit(0)
+
 from isaacsim import SimulationApp  # noqa: E402
 
 simulation_app = SimulationApp({"headless": args_cli.headless})
@@ -248,11 +324,12 @@ simulation_app = SimulationApp({"headless": args_cli.headless})
 
 import omni.timeline  # noqa: E402
 import omni.usd  # noqa: E402
-from pxr import Gf, UsdPhysics  # noqa: E402
+import carb  # noqa: E402
+from pxr import Gf, Usd, UsdGeom, UsdPhysics  # noqa: E402
 
 from sim_to_real_so101.utils.keyboard import KeyboardControl  # noqa: E402
-from sim_to_real_so101.utils.lerobot_interface import LeRobotSO101Interface  # noqa: E402
 from sim_to_real_so101.utils.physics_material import apply_friction_material  # noqa: E402
+from sim_to_real_so101.utils.paper_cube import is_rubber_cube, is_soft_cube, soft_cube_world_bounds, restore_soft_cube_points  # noqa: E402
 from sim_to_real_so101.utils.scene_reset import (  # noqa: E402
     ensure_translate_orient_ops,
     restore_prim_pose,
@@ -263,7 +340,9 @@ from sim_to_real_so101.utils.version_banner import print_simulator_version_banne
 print_simulator_version_banner()
 
 _DEMO_DIR = os.path.join(_REPO_SOURCE_DIR, "sim_to_real_so101", "demo")
-REAL_TO_SIM_USD = os.path.join(_DEMO_DIR, "real-to-sim.usd")
+REAL_TO_SIM_USD = args_cli.usd_path or os.path.join(
+    _DEMO_DIR, "codex-pick-place-table.usd" if args_cli.scene_profile == "codex" else "real-to-sim.usd"
+)
 
 ROBOT_PRIM_PATH = "/World/SO_ARM101_USD"
 AWS_CUBE_PRIM_PATH = "/World/AWSBuilderCube"
@@ -271,6 +350,10 @@ AWS_CUBE_PRIM_PATH = "/World/AWSBuilderCube"
 # collision-shape property (PhysicsMaterialAPI), not a rigid-body property.
 AWS_CUBE_COLLISION_MESH_PATH = "/World/AWSBuilderCube/Geometry/AWSBuilderCube_Geo"
 PAPER_BOWL_PRIM_PATH = "/World/PaperBowl"
+if args_cli.scene_profile == "codex":
+    AWS_CUBE_PRIM_PATH = "/World/Cube"
+    AWS_CUBE_COLLISION_MESH_PATH = "/World/Cube/Collision"
+    PAPER_BOWL_PRIM_PATH = "/World/Container"
 
 # Cube/bowl pose, size, and mass now come from WORKSPACE_LAYOUT/
 # RESOLVED_CUBE_POSE/RESOLVED_BOWL_POSE (resolved above, before Kit boot --
@@ -319,7 +402,6 @@ JOINT_GAINS = {
     "Jaw": dict(stiffness=4, damping=0.3, effort_limit=3),
 }
 JOINT_ORDER = list(JOINT_GAINS.keys())
-RAD_TO_DEG = 180.0 / 3.141592653589793
 
 # Wrist-roll leader-to-sim zero-pose alignment (2026-08-24 fix) -- see
 # utils/wrist_roll_alignment.py's module docstring for the full root-cause
@@ -343,7 +425,7 @@ RAD_TO_DEG = 180.0 / 3.141592653589793
 # simulated wrist looks off by ~90 deg at neutral after this change, that
 # confirms this value was wrong for the current calibration -- revert to
 # 0.0, or re-derive per utils/wrist_roll_alignment.py's docstring.
-WRIST_ROLL_ALIGNMENT = WristRollAlignment(direction_sign=1.0, zero_offset_deg=-90.0)
+WRIST_ROLL_ALIGNMENT = WristRollAlignment(direction_sign=1.0, zero_offset_deg=args_cli.wrist_roll_offset_deg)
 
 # Phase 2 timing measurement -- how often to flush the tick/send-time summary
 # (see the main loop). Deliberately periodic, not per-tick, per the plan's
@@ -406,6 +488,34 @@ def _ramp_follower_to_leader_start(follower_robot, leader_action: dict) -> None:
     print("[INFO]: Follower startup sync complete, entering normal mirroring.")
 
 
+class DualTeleopKeys(KeyboardControl):
+    def __init__(self):
+        self.arm_requested = self.pause_requested = self.exit_requested = False
+        super().__init__()
+
+    def _on_keyboard_event(self, event, *args, **kwargs):
+        if event.type == carb.input.KeyboardEventType.KEY_PRESS:
+            if event.input.name == "F8":
+                self.arm_requested = True
+                return True
+            if event.input.name == "F9":
+                self.pause_requested = True
+                return True
+            if event.input.name == "ESCAPE":
+                self.exit_requested = True
+                return True
+        return super()._on_keyboard_event(event, *args, **kwargs)
+
+
+def _connect_without_recalibration(interface, hold_current=False):
+    """Check EEPROM against the supplied calibration before configuration/motion."""
+    interface.init_device()
+    connect_calibrated(interface.robot, hold_current=hold_current)
+
+
+_CONNECTED_INTERFACES = []
+
+
 def main():
     # Arm connections happen BEFORE any scene/physics/rendering setup below.
     # Root-caused via isolate_follower_connect.py / isolate_dual_arm_connect.py /
@@ -424,16 +534,21 @@ def main():
         fps=30,
         kind="leader",
     )
-    try:
-        robot_iface.init_device()
-        robot_iface.connect()
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to connect to the leader arm on port={args_cli.port} id={args_cli.robot_id}: {exc}. "
-            "Check the arm is powered, plugged into the given --port, and not already held open by "
-            "another process (e.g. a previous run that didn't exit cleanly)."
-        ) from exc
-    connected = True
+    connected = False
+    if not SIM_TEST:
+        _CONNECTED_INTERFACES.append(robot_iface)
+        try:
+            if args_cli.start_paused:
+                _connect_without_recalibration(robot_iface)
+            else:
+                robot_iface.init_device()
+                robot_iface.connect()
+            connected = True
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to connect to the leader arm on port={args_cli.port} "
+                f"id={args_cli.robot_id}: {exc}"
+            ) from exc
 
     # Follower mirror -- only connected when --follower_port is given (see
     # docs/dual-teleop-sim-and-follower-plan.md Phase 1). device="cuda" per
@@ -442,20 +557,26 @@ def main():
     follower_iface = None
     follower_connected = False
     follower_send_failed = False
-    if args_cli.follower_port is not None:
+    if args_cli.follower_port is not None and not SIM_TEST:
         follower_iface = LeRobotSO101Interface(
-            device="cuda",
+            device="cpu",
             port=args_cli.follower_port,
             id=args_cli.follower_robot_id,
             cameras={},
             fps=30,
             kind="follower",
         )
+        _CONNECTED_INTERFACES.append(follower_iface)
         try:
-            follower_iface.init_device()
-            follower_iface.connect()
+            if args_cli.start_paused:
+                _connect_without_recalibration(follower_iface, hold_current=True)
+            else:
+                follower_iface.init_device()
+                follower_iface.connect()
             follower_connected = True
         except Exception as exc:
+            if connected:
+                robot_iface.robot.disconnect()
             raise RuntimeError(
                 f"Failed to connect to the follower arm on port={args_cli.follower_port} "
                 f"id={args_cli.follower_robot_id}: {exc}. Check the arm is powered, plugged into the "
@@ -463,17 +584,18 @@ def main():
             ) from exc
         print(f"[INFO]: Follower arm connected: port={args_cli.follower_port} id={args_cli.follower_robot_id}")
 
-        try:
+        if not args_cli.start_paused:
             _startup_leader_action = robot_iface.robot.get_action()
-        except Exception as exc:
-            print(f"[WARN]: Could not read the leader for follower startup sync ({exc}) -- skipping the ramp.")
-        else:
             _ramp_follower_to_leader_start(follower_iface.robot, _startup_leader_action)
 
     usd_context = omni.usd.get_context()
     usd_context.open_stage(REAL_TO_SIM_USD)
     simulation_app.update()
     stage = usd_context.get_stage()
+    if stage is None:
+        raise RuntimeError(f"Could not open USD scene: {REAL_TO_SIM_USD}")
+    # Runtime physics/poses live in a session layer; the authored scene stays reusable.
+    stage.SetEditTarget(stage.GetSessionLayer())
 
     robot_prim = stage.GetPrimAtPath(ROBOT_PRIM_PATH)
     if not robot_prim.IsValid():
@@ -484,18 +606,29 @@ def main():
     cube_prim = stage.GetPrimAtPath(AWS_CUBE_PRIM_PATH)
     if not cube_prim.IsValid():
         raise RuntimeError(f"Expected prim not found: {AWS_CUBE_PRIM_PATH}")
-    if not cube_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+    soft_cube = is_soft_cube(cube_prim)
+    # Cube/gripper contact authored by the scene builder (FEM or hard rubber): keep it.
+    authored_contact = soft_cube or is_rubber_cube(cube_prim)
+    if not soft_cube and not cube_prim.HasAPI(UsdPhysics.RigidBodyAPI):
         UsdPhysics.RigidBodyAPI.Apply(cube_prim)
-    if not cube_prim.HasAPI(UsdPhysics.MassAPI):
+    if not soft_cube and not cube_prim.HasAPI(UsdPhysics.MassAPI):
         UsdPhysics.MassAPI.Apply(cube_prim)
-    UsdPhysics.MassAPI(cube_prim).CreateMassAttr(WORKSPACE_LAYOUT.cube.mass_kg)
+    if not soft_cube:
+        UsdPhysics.MassAPI(cube_prim).CreateMassAttr(WORKSPACE_LAYOUT.cube.mass_kg)
 
     cube_collision_mesh = stage.GetPrimAtPath(AWS_CUBE_COLLISION_MESH_PATH)
     if not cube_collision_mesh.IsValid():
         raise RuntimeError(f"Expected prim not found: {AWS_CUBE_COLLISION_MESH_PATH}")
-    apply_friction_material(
-        cube_collision_mesh, AWS_CUBE_STATIC_FRICTION, AWS_CUBE_DYNAMIC_FRICTION, AWS_CUBE_RESTITUTION
-    )
+    # A dynamic cube cannot use a triangle-mesh collider. Author the convex
+    # approximation explicitly instead of relying on PhysX's error fallback.
+    if not authored_contact:
+        UsdPhysics.MeshCollisionAPI.Apply(cube_collision_mesh).CreateApproximationAttr("convexHull")
+        apply_friction_material(
+            cube_collision_mesh, AWS_CUBE_STATIC_FRICTION, AWS_CUBE_DYNAMIC_FRICTION, AWS_CUBE_RESTITUTION
+        )
+    else:
+        kind = "Volume-deformable" if soft_cube else "Hard-rubber (rigid, compliant contact)"
+        print(f"[MATERIAL]: {kind} paper/PVC cube; preserving authored friction, compliance and gripper material.", flush=True)
 
     # Correct the cube's geometry to the real cube's 5.3cm side length --
     # real-to-sim.usd's AWSBuilderCube_Geo mesh was authored at 5cm
@@ -507,16 +640,21 @@ def main():
     # different size than what's rendered. Applied at runtime (like the
     # RigidBodyAPI/mass/friction patches above), not by hand-editing the
     # checked-in USD asset.
-    cube_scale = tuple(s / fixed_workspace.AUTHORED_CUBE_GEO_SIZE_M for s in WORKSPACE_LAYOUT.cube.size_m)
-    cube_collision_mesh.GetAttribute("xformOp:scale").Set(Gf.Vec3f(*cube_scale))
+    if args_cli.scene_profile == "codex":
+        cube_xform = UsdGeom.Xformable(cube_prim)
+        cube_xform.AddScaleOp().Set(Gf.Vec3f(*(s/.055 for s in WORKSPACE_LAYOUT.cube.size_m)))
+    else:
+        cube_scale = tuple(s / fixed_workspace.AUTHORED_CUBE_GEO_SIZE_M for s in WORKSPACE_LAYOUT.cube.size_m)
+        cube_collision_mesh.GetAttribute("xformOp:scale").Set(Gf.Vec3f(*cube_scale))
 
     for collision_path in (GRIPPER_COLLISION_PATH, JAW_COLLISION_PATH):
         collision_prim = stage.GetPrimAtPath(collision_path)
         if not collision_prim.IsValid():
             raise RuntimeError(f"Expected prim not found: {collision_path}")
-        apply_friction_material(
-            collision_prim, GRIPPER_STATIC_FRICTION, GRIPPER_DYNAMIC_FRICTION, GRIPPER_RESTITUTION
-        )
+        if not authored_contact:
+            apply_friction_material(
+                collision_prim, GRIPPER_STATIC_FRICTION, GRIPPER_DYNAMIC_FRICTION, GRIPPER_RESTITUTION
+            )
 
     bowl_prim = stage.GetPrimAtPath(PAPER_BOWL_PRIM_PATH)
     if not bowl_prim.IsValid():
@@ -547,12 +685,10 @@ def main():
             f"+ cube.size_m[2]/2={WORKSPACE_LAYOUT.cube.size_m[2] / 2.0:.4f}) -- not auto-corrected. "
             "Re-measure cube.xyz_base_m, or set cube.rest_on_table=true, if this isn't intentional."
         )
-    if abs(WORKSPACE_LAYOUT.robot_world.yaw_deg) > 1e-9:
-        print(
-            f"[WARN]: robot_world.yaw_deg={WORKSPACE_LAYOUT.robot_world.yaw_deg} is set -- this build only "
-            "applies it to cube/bowl base-frame math. The simulated robot's root_joint mount is NOT yet "
-            "rotated to match (known limitation, see docs/hardcoded-real2sim-implementation-receipt.md)."
-        )
+    robot_translate, robot_orient = ensure_translate_orient_ops(robot_prim)
+    robot_translate.Set(Gf.Vec3d(*WORKSPACE_LAYOUT.robot_world.xyz_m))
+    rotation = fixed_workspace.yaw_deg_to_quat_wxyz(WORKSPACE_LAYOUT.robot_world.yaw_deg)
+    robot_orient.Set(Gf.Quatd(*rotation) if robot_orient.GetTypeName() == "quatd" else Gf.Quatf(*rotation))
 
     print(f"[LAYOUT] frame={WORKSPACE_LAYOUT.frame}")
     print(f"[LAYOUT] source={WORKSPACE_LAYOUT.source}")
@@ -568,7 +704,7 @@ def main():
     print(f"[LAYOUT] bowl_base_xyz={bowl_base_str}")
     print(f"[LAYOUT] bowl_world_xyz={_fmt_xyz(RESOLVED_BOWL_POSE.xyz_world_m)}")
     print(f"[LAYOUT] bowl_yaw_deg={RESOLVED_BOWL_POSE.yaw_world_deg:.2f} (source={RESOLVED_BOWL_POSE.yaw_source})")
-    print("[LAYOUT] cube_dynamic=True")
+    print(f"[LAYOUT] cube_dynamic=True; volume_deformable={soft_cube}; hard_rubber={is_rubber_cube(cube_prim)}")
     print("[LAYOUT] bowl_static=True")
 
     # Captured after the pose above is applied and before the timeline
@@ -583,8 +719,11 @@ def main():
     if not root_joint_prim.IsValid():
         raise RuntimeError(f"Expected prim not found: {ROBOT_PRIM_PATH}/root_joint")
     local_rot1 = root_joint_prim.GetAttribute("physics:localRot1").Get()
-    root_joint_prim.GetAttribute("physics:localPos0").Set(Gf.Vec3f(*WORKSPACE_LAYOUT.robot_world.xyz_m))
-    root_joint_prim.GetAttribute("physics:localRot0").Set(local_rot1)
+    body1_path = root_joint_prim.GetRelationship("physics:body1").GetTargets()[0]
+    body_world = UsdGeom.Xformable(stage.GetPrimAtPath(body1_path)).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+    world_anchor = body_world.Transform(Gf.Vec3d(root_joint_prim.GetAttribute("physics:localPos1").Get()))
+    root_joint_prim.GetAttribute("physics:localPos0").Set(Gf.Vec3f(world_anchor))
+    root_joint_prim.GetAttribute("physics:localRot0").Set(Gf.Quatf(body_world.ExtractRotationQuat()*Gf.Quatd(local_rot1)))
 
     # Apply the tuned actuator gains and cache each joint's limits/attributes.
     joints = {}
@@ -593,9 +732,10 @@ def main():
         if not joint_prim.IsValid():
             raise RuntimeError(f"Expected joint prim not found: {joint_name}")
 
-        joint_prim.GetAttribute("drive:angular:physics:stiffness").Set(float(gains["stiffness"]))
-        joint_prim.GetAttribute("drive:angular:physics:damping").Set(float(gains["damping"]))
-        joint_prim.GetAttribute("drive:angular:physics:maxForce").Set(float(gains["effort_limit"]))
+        if not (authored_contact and joint_name == "Jaw"):
+            joint_prim.GetAttribute("drive:angular:physics:stiffness").Set(float(gains["stiffness"]))
+            joint_prim.GetAttribute("drive:angular:physics:damping").Set(float(gains["damping"]))
+            joint_prim.GetAttribute("drive:angular:physics:maxForce").Set(float(gains["effort_limit"]))
 
         target_attr = joint_prim.GetAttribute("drive:angular:physics:targetPosition")
         joints[joint_name] = {
@@ -605,13 +745,33 @@ def main():
         }
 
     timeline = omni.timeline.get_timeline_interface()
-    timeline.play()
+    if not args_cli.start_paused or SIM_TEST:
+        timeline.play()
     simulation_app.update()
 
-    keyboard_control = KeyboardControl()
+    keyboard_control = DualTeleopKeys()
+    gate = DualActionGate(
+        allow_gripper_start_mismatch=True, startup_mode=args_cli.startup_mode,
+        timeout_s=args_cli.control_timeout_s, max_step_s=min(1/args_cli.control_hz, 1/30),
+    ) if args_cli.start_paused and not SIM_TEST else None
+    camera_preview = None
+    if args_cli.show_cameras and not SIM_TEST:
+        from sim_to_real_so101.utils.dual_camera_preview import DualCameraPreview
+        camera_preview = DualCameraPreview(args_cli.camera_indices)
+    if args_cli.scene_profile == "codex" and not args_cli.headless:
+        from omni.kit.viewport.utility import get_active_viewport
+        viewport = get_active_viewport()
+        if viewport:
+            viewport.camera_path = "/World/Cameras/DemoCamera"
+    if gate:
+        print(f"[CONTROL]: Short loop delays continue with a {gate.max_step_s*1000:.1f}ms command-step cap; gaps over {gate.timeout_s:.2f}s pause until F8.", flush=True)
+        if gate.startup_mode == "ramp":
+            print("[PAUSED]: F8 starts BOTH arms with a 10-unit/s command ramp from the follower pose. Hold the leader still during convergence. F9 pauses; Esc exits.", flush=True)
+        else:
+            print("[PAUSED]: F8 checks the five arm joints and runs BOTH arms; gripper ramps from its current opening. F9 pauses; Esc exits.", flush=True)
 
     print_simulator_version_banner()
-    print(f"[INFO]: Leader arm connected: port={args_cli.port} id={args_cli.robot_id}")
+    print(f"[INFO]: {'No-hardware physics test' if SIM_TEST else 'Leader connected: '+args_cli.port}")
     print(f"[INFO]: HF_LEROBOT_CALIBRATION={os.environ['HF_LEROBOT_CALIBRATION']}")
     print("[INFO]: Driving joints from the leader arm. Ctrl+C or close the window to stop.")
     print("[INFO]: Click 'R' to reset the cube/bowl to their original positions")
@@ -625,30 +785,130 @@ def main():
     send_time_total = 0.0
     send_count = 0
     last_stats_print = time.perf_counter()
+    test_start = time.perf_counter()
+    last_preview = 0.
+    last_delay_warning = -math.inf
+    last_render_s = 0.0
+    last_follower_send_s = 0.0
+    max_tick_s = 0.0
+    max_render_s = 0.0
 
     try:
         while simulation_app.is_running():
             tick_start = time.perf_counter()
+            if SIM_TEST:
+                simulation_app.update()
+                if time.perf_counter()-test_start >= args_cli.sim_test_seconds:
+                    cube_world = UsdGeom.Xformable(cube_prim).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+                    if soft_cube:
+                        skin_bounds = soft_cube_world_bounds(stage)
+                        cube_world = (skin_bounds.GetMin()+skin_bounds.GetMax())/2
+                    base_world = UsdGeom.Xformable(stage.GetPrimAtPath(ROBOT_PRIM_PATH+"/base")).ComputeLocalToWorldTransform(Usd.TimeCode.Default()).ExtractTranslation()
+                    expected_z = WORKSPACE_LAYOUT.table_surface_z_world_m+WORKSPACE_LAYOUT.cube.size_m[2]/2
+                    if abs(cube_world[2]-expected_z) > .01 or (base_world-Gf.Vec3d(*WORKSPACE_LAYOUT.robot_world.xyz_m)).GetLength() > .01:
+                        raise RuntimeError(f"Physics smoke check failed: cube={cube_world}, base={base_world}")
+                    print(f"[PASS]: Physics settling: cube={cube_world}, fixed base={base_world}; no hardware opened", flush=True)
+                    break
+                continue
+            if keyboard_control.exit_requested:
+                break
+            if gate and keyboard_control.pause_requested:
+                gate.pause()
+                timeline.pause()
+                keyboard_control.pause_requested = False
+                keyboard_control.arm_requested = False
+                print("[PAUSED]: follower holds its last target; physics paused", flush=True)
+            if gate and gate.active and not timeline.is_playing():
+                gate.pause("Timeline paused/stopped; press F8 to recheck the start pose")
+                print(f"[PAUSED]: {gate.reason}", flush=True)
+            if camera_preview and tick_start-last_preview > .1:
+                camera_preview.update()
+                last_preview = tick_start
 
             if keyboard_control.reset_world:
-                restore_prim_pose(cube_prim, cube_orig_pose, zero_velocity=True)
+                if gate:
+                    gate.pause("Scene reset; reset the real cube too before F8")
+                    timeline.pause()
+                if soft_cube:
+                    # Stop/reinitialize physics to clear all FEM node velocities,
+                    # rather than accidentally adding a rigid-body API on reset.
+                    timeline.stop()
+                    simulation_app.update()
+                    restore_soft_cube_points(stage)
+                restore_prim_pose(cube_prim, cube_orig_pose, zero_velocity=not soft_cube)
                 restore_prim_pose(bowl_prim, bowl_orig_pose)
                 keyboard_control.reset_world = False
 
+            leader_read_start = time.perf_counter()
             try:
                 real_action = robot_iface.robot.get_action()
             except Exception as exc:
-                print(f"[ERROR]: Lost connection to the leader arm: {exc}")
-                break
+                raise RuntimeError(f"Lost connection to leader on {args_cli.port}: {exc}") from exc
+            leader_read_s = time.perf_counter()-leader_read_start
 
-            raw_tensor = robot_iface.get_raw_actions_tensor(real_action)
-            mapped_deg = robot_iface.get_mapped_actions_vectorized(raw_tensor) * RAD_TO_DEG
+            if gate:
+                if keyboard_control.arm_requested:
+                    keyboard_control.arm_requested = False
+                    try:
+                        observed = follower_iface.robot.get_observation() if follower_connected else real_action
+                        gate.arm(real_action, observed, time.perf_counter())
+                        if gate.startup_ramping:
+                            print(f"[STARTUP]: Ramping all joint commands from the measured follower pose at {gate.startup_speed:.1f} normalized units/s. Hold the leader still; F9 pauses.", flush=True)
+                        if abs(real_action["gripper.pos"]-observed["gripper.pos"]) > gate.max_start_difference:
+                            print(
+                                f"[GRIPPER]: Starting at follower={observed['gripper.pos']:.1f}; "
+                                f"tracking leader={real_action['gripper.pos']:.1f} at at most "
+                                f"{gate.startup_speed if gate.startup_ramping else gate.speed:.1f} normalized units/s (no start-pose rejection).",
+                                flush=True,
+                            )
+                        print("[RUNNING]: same limited command goes to real follower and simulated arm", flush=True)
+                    except (ValueError, KeyError, RuntimeError) as exc:
+                        gate.pause(str(exc))
+                        print(f"[PAUSED]: {exc}", flush=True)
+                was_active = gate.active
+                was_ramping = gate.startup_ramping
+                real_action = gate.next_action(real_action, time.perf_counter())
+                if was_ramping and gate.active and not gate.startup_ramping:
+                    print("[RUNNING]: Arm command ramp converged; normal teleoperation rate enabled.", flush=True)
+                if real_action is None:
+                    if was_active:
+                        print(f"[PAUSED]: {gate.reason}", flush=True)
+                    timeline.pause()
+                    simulation_app.update()
+                    time.sleep(max(0., 1/args_cli.control_hz-(time.perf_counter()-tick_start)))
+                    continue
+                if gate.last_gap_s > .5 and time.perf_counter()-last_delay_warning >= STATS_PRINT_INTERVAL_S:
+                    last_delay_warning = time.perf_counter()
+                    print(
+                        f"[DELAY]: Loop gap {gate.last_gap_s:.3f}s; continuing with a capped command step, no catch-up jump. "
+                        f"Previous render={last_render_s*1000:.1f}ms, current leader read={leader_read_s*1000:.1f}ms, "
+                        f"previous follower send={last_follower_send_s*1000:.1f}ms.", flush=True,
+                    )
+
+            # Use the follower's returned (possibly gripper-limited) command as
+            # the sim input too, so both receive the same command in this tick.
+            if gate and follower_connected:
+                send_start = time.perf_counter()
+                try:
+                    real_action = follower_iface.robot.send_action(real_action)
+                    # Base the next slew step on the command actually accepted,
+                    # including LeRobot's gripper stall relief.
+                    gate.last_action = dict(real_action)
+                except Exception as exc:
+                    gate.pause(f"Follower communication failed: {exc}")
+                    timeline.pause()
+                    raise RuntimeError(gate.reason) from exc
+                last_follower_send_s = time.perf_counter() - send_start
+                send_time_total += last_follower_send_s
+                send_count += 1
+
+            mapped_deg = robot_iface.mapped_degrees(real_action)
 
             # wrist_roll's alignment-corrected target, captured for the
             # periodic debug printout below -- every other joint is set from
             # `mapped_deg` unmodified, exactly as before this fix.
             wrist_roll_target = None
-            for joint_name, target_deg in zip(JOINT_ORDER, mapped_deg.tolist()):
+            for joint_name, target_deg in zip(JOINT_ORDER, mapped_deg):
                 info = joints[joint_name]
                 if joint_name == "Wrist_Roll":
                     wrist_roll_target = WRIST_ROLL_ALIGNMENT.apply(target_deg, info["lower"], info["upper"])
@@ -663,7 +923,7 @@ def main():
             # send_action() expects. See dual-teleop-sim-and-follower-plan.md
             # Phase 1 (why no conversion) and Phase 2 (why the try/except and
             # the timing measurement below).
-            if follower_connected and not follower_send_failed:
+            if gate is None and follower_connected and not follower_send_failed:
                 send_start = time.perf_counter()
                 try:
                     follower_iface.robot.send_action(real_action)
@@ -677,10 +937,18 @@ def main():
                     send_time_total += time.perf_counter() - send_start
                     send_count += 1
 
+            if gate and gate.active:
+                timeline.play()
+            render_start = time.perf_counter()
             simulation_app.update()
+            last_render_s = time.perf_counter()-render_start
+            max_render_s = max(max_render_s, last_render_s)
+            time.sleep(max(0., 1/args_cli.control_hz-(time.perf_counter()-tick_start)))
 
             tick_count += 1
-            tick_time_total += time.perf_counter() - tick_start
+            tick_elapsed_s = time.perf_counter() - tick_start
+            tick_time_total += tick_elapsed_s
+            max_tick_s = max(max_tick_s, tick_elapsed_s)
             now = time.perf_counter()
             if now - last_stats_print >= STATS_PRINT_INTERVAL_S:
                 avg_tick_ms = (tick_time_total / tick_count) * 1000.0
@@ -692,6 +960,7 @@ def main():
                     )
                 else:
                     print(f"[INFO]: avg tick={avg_tick_ms:.2f} ms over {tick_count} ticks")
+                print(f"[INFO]: maximum tick={max_tick_s*1000:.1f} ms; maximum render={max_render_s*1000:.1f} ms", flush=True)
                 # Diagnostic readout for the wrist_roll real-vs-sim alignment
                 # fix (2026-08-24) -- every stage of the pipeline, so a
                 # visual mismatch can be traced to a specific number while
@@ -713,7 +982,10 @@ def main():
                 send_time_total = 0.0
                 send_count = 0
                 last_stats_print = now
+                max_tick_s = max_render_s = 0.0
     finally:
+        if camera_preview:
+            camera_preview.close()
         keyboard_control.cleanup()
         if connected:
             try:
@@ -729,7 +1001,25 @@ def main():
 
 
 if __name__ == "__main__":
+    exit_code = 0
     try:
         main()
+    except KeyboardInterrupt:
+        print("[STOP]: Interrupted; disconnecting both arms.", flush=True)
+        exit_code = 130
+    except Exception as exc:
+        print(f"[ERROR]: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        exit_code = 1
     finally:
-        simulation_app.close()
+        # Also clean up failures during scene setup, before the loop's finally.
+        for interface in reversed(_CONNECTED_INTERFACES):
+            robot = getattr(interface, "robot", None)
+            bus = getattr(robot, "bus", None)
+            if bus is not None and bus.is_connected:
+                try:
+                    bus.disconnect()
+                except Exception as exc:
+                    print(f"[WARN]: Final serial cleanup failed: {exc}")
+        # Kit's fast shutdown can exit the process itself, bypassing sys.exit.
+        simulation_app.close(exit_code=exit_code)
+    sys.exit(exit_code)

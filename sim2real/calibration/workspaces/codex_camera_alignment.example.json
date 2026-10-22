@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "instructions": [
+    "EXAMPLE ONLY: proposed sizes and mounts below are NOT measured. Do not set measured=true until physically verifying each marker's printed black-square side length and full mount transform.",
+    "Calibrate fixed index 1 and wrist index 0 separately with scripts/calibrate_camera_intrinsics.py; supply existing calibration JSON containing camera_matrix, dist_coeffs and frame_size [width,height]. No intrinsic calibration files are shipped here.",
+    "Intrinsics paths are relative to this config file. Keep calibration resolution, focus and zoom unchanged during registration.",
+    "Use ArUco DICT_4X4_50: base=2, cube=0, bowl/container=1. Marker +X is right, +Y up on the printed marker, +Z out of its front; all translations below are meters.",
+    "base_from_marker maps base marker coordinates to SO101 mounting-base coordinates. Proposed flat mount: center [0,-0.10,0.03], yaw 0; measure against the physical base, not a guessed camera pose.",
+    "marker_from_object maps object-root coordinates into marker coordinates. Proposed centered cube-top marker: root center 27.5 mm below marker; 55 mm cube. Proposed bowl marker: table-contact root 3 mm below inner-bottom marker. Measure any lateral offset and yaw too.",
+    "Keep objects stationary and resting on the table. Each sample requires base and object together in the SAME image; reposition the wrist BETWEEN exposures until both objects have five valid samples from EACH camera. Cameras must be above table looking downward; no stale wrist extrinsics are used.",
+    "The scene base is world [0,0.3,0.72] yaw 0; table is world Z 0.75. Validate cube root base Z 0.0575 and bowl root Z 0.03. Output cube Z 0 is the existing rest_on_table sentinel; actual measured transforms remain in alignment metadata."
+  ],
+  "cameras": {
+    "fixed": {"index": 1, "intrinsics_path": "../camera/fixed_camera_intrinsics.json"},
+    "wrist": {"index": 0, "intrinsics_path": "../camera/wrist_camera_intrinsics.json"}
+  },
+  "markers": {
+    "base": {
+      "id": 2,
+      "size_m": 0.04,
+      "measured": false,
+      "base_from_marker": [[1,0,0,0], [0,1,0,-0.10], [0,0,1,0.03], [0,0,0,1]]
+    },
+    "cube": {
+      "id": 0,
+      "size_m": 0.03,
+      "measured": false,
+      "marker_from_object": [[1,0,0,0], [0,1,0,0], [0,0,1,-0.0275], [0,0,0,1]]
+    },
+    "bowl": {
+      "id": 1,
+      "size_m": 0.03,
+      "measured": false,
+      "marker_from_object": [[1,0,0,0], [0,1,0,0], [0,0,1,-0.003], [0,0,0,1]]
+    }
+  },
+  "thresholds": {
+    "min_samples_per_camera": 5,
+    "max_reprojection_rms_px": 2.0,
+    "max_scatter_m": 0.005,
+    "max_angular_scatter_deg": 5.0,
+    "max_camera_disagreement_m": 0.01,
+    "max_camera_disagreement_deg": 5.0,
+    "max_rest_height_error_m": 0.01,
+    "max_tilt_deg": 10.0,
+    "ambiguity_error_margin_px": 0.25,
+    "ambiguity_translation_m": 0.005,
+    "ambiguity_angle_deg": 5.0
+  }
+}

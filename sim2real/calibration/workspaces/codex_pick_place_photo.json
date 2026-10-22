@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "frame": "so101_base",
+  "robot_world": {"xyz_m": [0.0, 0.3, 0.72], "yaw_deg": 0.0},
+  "table": {"surface_z_world_m": 0.75},
+  "cube": {
+    "xyz_base_m": [0.0, -0.2663747604, 0.0],
+    "yaw_deg": 0.0,
+    "size_m": [0.055, 0.055, 0.055],
+    "mass_kg": 0.06,
+    "rest_on_table": true
+  },
+  "bowl": {"xyz_base_m": [-0.21, -0.2663747604, 0.03], "yaw_deg": 0.0},
+  "alignment": {
+    "status": "photo_estimated",
+    "note": "Matches codex-pick-place-table.usd: bowl mirrored to robot left at the user's request, preserving ruler-derived spacing. See docs/screenshot-scene-technical-specification.md. Not a camera registration."
+  }
+}
