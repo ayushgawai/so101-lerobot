@@ -1,0 +1,150 @@
+{
+  "status": "intrinsics_estimated_pending_robot_frame_validation",
+  "camera_index": 1,
+  "frame_size": [
+    640,
+    480
+  ],
+  "square_size_m": 0.0074,
+  "sample_count": 43,
+  "camera_matrix": [
+    [
+      405.99526843244064,
+      0.0,
+      313.7536257200812
+    ],
+    [
+      0.0,
+      405.85294229167573,
+      223.24863744783076
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "dist_coeffs": [
+    -0.341901937001334,
+    0.15464049755519146,
+    0.0012910846217974376,
+    0.00015906646766756542,
+    -0.038501103142716396
+  ],
+  "reprojection_error_px": 0.20476769279858828,
+  "per_view_rms_px": [
+    0.18678583204746246,
+    0.1939385086297989,
+    0.21323075890541077,
+    0.22630341351032257,
+    0.1751583069562912,
+    0.17789892852306366,
+    0.204353928565979,
+    0.21061745285987854,
+    0.18771372735500336,
+    0.1752546727657318,
+    0.21013033390045166,
+    0.16289468109607697,
+    0.20638062059879303,
+    0.16872644424438477,
+    0.17620427906513214,
+    0.19120532274246216,
+    0.21272362768650055,
+    0.18064484000205994,
+    0.17219947278499603,
+    0.1681164801120758,
+    0.19485099613666534,
+    0.17781661450862885,
+    0.18959635496139526,
+    0.21831250190734863,
+    0.1992485672235489,
+    0.2827081084251404,
+    0.22252099215984344,
+    0.19228310883045197,
+    0.19555765390396118,
+    0.1741161197423935,
+    0.27410152554512024,
+    0.22998040914535522,
+    0.1946692168712616,
+    0.2021649181842804,
+    0.15587657690048218,
+    0.19677668809890747,
+    0.2772377133369446,
+    0.1909148395061493,
+    0.27717581391334534,
+    0.21235087513923645,
+    0.2266358584165573,
+    0.19148226082324982,
+    0.23089411854743958
+  ],
+  "split_fits": [
+    {
+      "label": "even",
+      "rms": 0.21064640664706408,
+      "fx": 405.9987049005322,
+      "fy": 405.89416169098786,
+      "cx": 314.9342615349733,
+      "cy": 224.95316856033273,
+      "held_out_max_rms": 0.2826347053050995
+    },
+    {
+      "label": "odd",
+      "rms": 0.19798060003762832,
+      "fx": 405.4557796937742,
+      "fy": 405.24089375973836,
+      "cx": 312.8869360402628,
+      "cy": 221.7606518716341,
+      "held_out_max_rms": 0.764803946018219
+    },
+    {
+      "label": "pass1",
+      "rms": 0.1955922349962857,
+      "fx": 403.13581689042553,
+      "fy": 403.3928918059278,
+      "cx": 308.22031957253665,
+      "cy": 221.5531220253346,
+      "held_out_max_rms": 0.2802603244781494
+    },
+    {
+      "label": "pass2",
+      "rms": 0.21584914527450652,
+      "fx": 409.59261873588343,
+      "fy": 408.7471896117331,
+      "cx": 317.93833674511484,
+      "cy": 226.1690603337477,
+      "held_out_max_rms": 0.6128722429275513
+    }
+  ],
+  "observed_pixel_min": [
+    26.74759292602539,
+    121.19097137451172
+  ],
+  "observed_pixel_max": [
+    462.3210144042969,
+    420.7967529296875
+  ],
+  "normal_component_range": [
+    0.9500012434178511,
+    0.3362185122324305,
+    0.1919537814917136
+  ],
+  "observation_files": [
+    ".cache\\astra-preflight\\top-calibration\\observations.npz",
+    ".cache\\astra-preflight\\top-calibration-pass2-20261022-091443\\observations.npz"
+  ],
+  "validation": {
+    "combined_rms_px": 0.20476769279858828,
+    "alternating_subset_focal_disagreement_percent": 0.16096173346946335,
+    "max_held_out_rms_px": 0.764803946018219,
+    "limitations": [
+      "No camera-to-robot transform established.",
+      "Image coverage is limited at top and right edges; avoid extrapolating there until independently validated.",
+      "Calibration applies to camera index 1 at 640x480 with unchanged focus and lens settings.",
+      "Not a metric robot positioning accuracy test.",
+      "Corrected user measurement: 74 mm across 10 squares. Same screen zoom across captures is assumed; raw NPZ files retain the original 5.05 mm metadata for provenance."
+    ]
+  },
+  "physical_target_scale_status": "user_corrected_long_edge_74_mm_pending_independent_validation",
+  "physical_target_scale_note": "User corrected 10-square long edge from 50.5 mm to 74 mm. Intrinsic pixel parameters unchanged under uniform target scaling; assumes screen zoom unchanged across captures.",
+  "original_assumed_square_size_m": 0.00505
+}

@@ -1,0 +1,112 @@
+{
+  "status": "intrinsics_estimated_pending_robot_frame_validation",
+  "camera_index": 0,
+  "frame_size": [
+    640,
+    480
+  ],
+  "square_size_m": 0.0074,
+  "sample_count": 22,
+  "camera_matrix": [
+    [
+      1215.8467022570405,
+      0.0,
+      281.825812909424
+    ],
+    [
+      0.0,
+      1213.9438903530483,
+      280.16710522057025
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "dist_coeffs": [
+    -0.42758333073053684,
+    0.1148465350217785,
+    0.002212178560577337,
+    0.0013722821979803674,
+    2.1663592695322738
+  ],
+  "reprojection_error_px": 0.08202096836489808,
+  "per_view_rms_px": [
+    0.08565350621938705,
+    0.05818101763725281,
+    0.07277978211641312,
+    0.05069348216056824,
+    0.06186436116695404,
+    0.08097139000892639,
+    0.04566332697868347,
+    0.09877520054578781,
+    0.04909069091081619,
+    0.11636742949485779,
+    0.08005654066801071,
+    0.12756134569644928,
+    0.07017095386981964,
+    0.09813529253005981,
+    0.07633188366889954,
+    0.05705609545111656,
+    0.07216164469718933,
+    0.07225088030099869,
+    0.09290066361427307,
+    0.0930868610739708,
+    0.11361134797334671,
+    0.06550028920173645
+  ],
+  "split_fits": [
+    {
+      "label": "even",
+      "rms": 0.075296475673383,
+      "fx": 1210.0978541777413,
+      "fy": 1209.1453189561853,
+      "cx": 283.9714345651253,
+      "cy": 281.9029046765949,
+      "held_out_max_rms": 0.13049067556858063
+    },
+    {
+      "label": "odd",
+      "rms": 0.08582108231664802,
+      "fx": 1223.6219592462808,
+      "fy": 1221.1857930855576,
+      "cx": 278.38585443307824,
+      "cy": 279.9716537503188,
+      "held_out_max_rms": 0.11883565038442612
+    }
+  ],
+  "observed_pixel_min": [
+    96.01669311523438,
+    28.793907165527344
+  ],
+  "observed_pixel_max": [
+    476.50738525390625,
+    338.9486999511719
+  ],
+  "normal_component_range": [
+    0.7723243133994095,
+    0.5564538227490312,
+    0.1261895079037254
+  ],
+  "observation_files": [
+    ".cache\\astra-preflight\\wrist-calibration-filtered.npz",
+    ".cache\\astra-preflight\\wrist-calibration-20261022-092604\\observations.npz"
+  ],
+  "validation": {
+    "combined_rms_px": 0.08202096836489808,
+    "alternating_subset_focal_disagreement_percent": 1.1123199202197096,
+    "max_held_out_rms_px": 0.13049067556858063,
+    "limitations": [
+      "No wrist-to-tool or camera-to-robot transform established.",
+      "Coverage remains limited at image edges and below y=339; distortion extrapolation there is unvalidated.",
+      "Calibration applies to camera index 0 at 640x480 with unchanged focus and lens settings.",
+      "Pixel fit and subset consistency do not establish metric manipulation accuracy.",
+      "Corrected user measurement: 74 mm across 10 squares. Same screen zoom across captures is assumed; raw NPZ files retain the original 5.05 mm metadata for provenance."
+    ],
+    "excluded_frames_record": ".cache\\astra-preflight\\wrist-exclusions.json"
+  },
+  "physical_target_scale_status": "user_corrected_long_edge_74_mm_pending_independent_validation",
+  "physical_target_scale_note": "User corrected 10-square long edge from 50.5 mm to 74 mm. Intrinsic pixel parameters unchanged under uniform target scaling; assumes screen zoom unchanged across captures.",
+  "original_assumed_square_size_m": 0.00505
+}
