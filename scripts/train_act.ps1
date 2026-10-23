@@ -42,8 +42,15 @@ param(
     [int]$Steps          = 100000,
     [int]$ChunkSize      = 100,
     [int]$NumWorkers     = 0,                             # keep 0 on Windows
+    [int]$Seed           = 1000,                          # lerobot's default; vary to measure run-to-run spread
     [switch]$ReturnUint8,                                 # faster dataloading (uint8 frames over IPC)
     [switch]$Augment,                                     # enable image augmentation (color/affine jitter) for closed-loop robustness
+
+    # --- validation ---
+    # Whole episodes held out of training and scored as `val/loss`, e.g. -ValEpisodes (47,45,37,42,39).
+    # Empty = no validation. See train_smolvla.ps1 for the cost of a validation pass.
+    [int[]]$ValEpisodes  = @(),
+    [int]$ValFreq        = 5000,                          # validate every N steps (and at the last step)
 
     # --- checkpointing / logging cadence ---
     [int]$SaveFreq       = 5000,
@@ -102,6 +109,7 @@ $cmd = @(
     "--save_freq=$SaveFreq",
     "--log_freq=$LogFreq",
     "--num_workers=$NumWorkers",
+    "--seed=$Seed",
     "--job_name=$JobName",
     "--output_dir=$OutputDir"
 )
@@ -113,6 +121,12 @@ if (-not [string]::IsNullOrEmpty($DatasetRoot)) {
 
 if ($ReturnUint8) {
     $cmd += "--dataset.return_uint8=true"
+}
+
+# Held-out validation: the policy never trains on these episodes.
+if ($ValEpisodes.Count -gt 0) {
+    $cmd += "--dataset.val_episodes=[$($ValEpisodes -join ',')]"
+    $cmd += "--val_freq=$ValFreq"
 }
 
 # Enable the image_transforms already defined in the dataset config (brightness/contrast/
@@ -149,7 +163,8 @@ if ($Resume) {
 Write-Host "=== Training ACT ($(if ($Resume) { 'resume' } else { 'from scratch' })) ===" -ForegroundColor Cyan
 Write-Host "dataset : $RepoId  (root: $(if ($DatasetRoot) { $DatasetRoot } else { 'Hub' }))"
 Write-Host "output  : $OutputDir"
-Write-Host "device  : $Device   steps: $Steps   batch: $BatchSize   save_freq: $SaveFreq"
+Write-Host "device  : $Device   steps: $Steps   batch: $BatchSize   save_freq: $SaveFreq   seed: $Seed"
+Write-Host "val     : $(if ($ValEpisodes.Count -gt 0) { "episodes $($ValEpisodes -join ',') every $ValFreq steps" } else { 'disabled' })"
 Write-Host "wandb   : $(if ($Wandb) { "$WandbProject (mode=$WandbMode)" } else { 'disabled' })"
 Write-Host ""
 Write-Host "$Python $($cmd -join ' ')" -ForegroundColor DarkGray
