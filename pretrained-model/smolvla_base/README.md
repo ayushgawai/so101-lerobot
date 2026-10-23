@@ -2,12 +2,14 @@
 language:
 - en
 library_name: lerobot
+license: apache-2.0
 pipeline_tag: robotics
 tags:
 - vision-language-action
 - imitation-learning
 - lerobot
 inference: false
+base_model: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
 ---
 
 # SmolVLA (LeRobot)

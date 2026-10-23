@@ -17,14 +17,17 @@ import numpy as np
 
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 
-# Demo start pose (mean over 50 training episodes), in degrees. gripper is 0-100 (closed ~2).
+# Demo start pose: mean first frame of the 50 aakashv100/so101-pick-place-positions episodes,
+# in degrees, under the 2026-09-14 calibration. gripper is 0-100; this gripper stops at ~38
+# when closed empty, so 39 is "closed". (The old v2 target had wrist_roll -89 from the
+# pre-recalibration wrap fix, about 90 deg off under the current calibration.)
 TARGET = {
-    "shoulder_pan": 3.0,
-    "shoulder_lift": -103.0,
-    "elbow_flex": 95.0,
-    "wrist_flex": 78.0,
-    "wrist_roll": -89.0,
-    "gripper": 2.0,
+    "shoulder_pan": 4.4,
+    "shoulder_lift": -96.4,
+    "elbow_flex": 91.8,
+    "wrist_flex": 62.6,
+    "wrist_roll": -7.0,
+    "gripper": 39.1,
 }
 
 def main() -> None:

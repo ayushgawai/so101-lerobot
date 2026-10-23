@@ -100,6 +100,12 @@ if (-not (Test-Path $Python)) {
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 
+# One CPU thread for torch/OpenMP. The default (one per core) spins idle threads: measured
+# 19 of 24 cores busy for no speed gain, which starved the cameras and held the control loop
+# at ~16 Hz. With 1 thread the same policy loop runs at full rate on 0.2 cores.
+$env:OMP_NUM_THREADS = "1"
+$env:MKL_NUM_THREADS = "1"
+
 # Per-policy defaults. Both are evaluated on the same protocol; only the
 # checkpoint and the eval dataset name differ.
 # RenameMap: smolvla_base declares its cameras as observation.images.camera{1,2},
